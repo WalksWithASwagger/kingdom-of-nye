@@ -1,0 +1,9 @@
+# local API key (see README)
+.env
+
+# auto-saved dream gallery
+visions/
+
+# python
+__pycache__/
+*.pyc

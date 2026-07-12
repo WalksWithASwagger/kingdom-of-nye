@@ -1,0 +1,1385 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>The Kingdom of Nye - Art Bell Visualizer</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  html, body {
+    margin: 0; padding: 0; width: 100%; height: 100%;
+    background: #000; overflow: hidden;
+    font-family: Georgia, 'Times New Roman', serif;
+    cursor: default;
+  }
+  body.idle { cursor: none; }
+  canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+  #gl { z-index: 1; }
+  #bc { z-index: 2; opacity: 0; mix-blend-mode: screen; transition: opacity 2s ease; }
+  #fx { z-index: 3; }
+
+  #splash {
+    position: absolute; inset: 0; z-index: 10;
+    background: radial-gradient(ellipse at 50% 60%, #120a20 0%, #000 75%);
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    color: #d9b06c; text-align: center;
+    transition: opacity 2.5s ease;
+  }
+  #splash.gone { opacity: 0; pointer-events: none; }
+  #splash h1 {
+    font-size: clamp(28px, 5vw, 64px); font-weight: normal;
+    letter-spacing: 0.35em; margin: 0 0 8px 0; text-transform: uppercase;
+    text-shadow: 0 0 30px rgba(217,176,108,0.5);
+  }
+  #splash .sub {
+    font-style: italic; color: #8a7db0; letter-spacing: 0.15em;
+    margin-bottom: 48px; font-size: clamp(13px, 1.6vw, 18px);
+  }
+  #tune {
+    font-family: inherit; font-size: clamp(15px, 1.8vw, 22px);
+    letter-spacing: 0.3em; text-transform: uppercase;
+    color: #e8c988; background: transparent;
+    border: 1px solid rgba(217,176,108,0.6); border-radius: 999px;
+    padding: 16px 44px; cursor: pointer;
+    text-shadow: 0 0 12px rgba(217,176,108,0.7);
+    box-shadow: 0 0 24px rgba(217,176,108,0.15), inset 0 0 24px rgba(217,176,108,0.08);
+    animation: pulse 3s ease-in-out infinite;
+  }
+  #tune:hover { border-color: #e8c988; box-shadow: 0 0 40px rgba(217,176,108,0.35), inset 0 0 24px rgba(217,176,108,0.15); }
+  @keyframes pulse { 0%,100% { opacity: .8; } 50% { opacity: 1; } }
+  #splash .fine {
+    margin-top: 40px; color: #665e7d; font-size: 12px; line-height: 1.9;
+    letter-spacing: 0.08em; max-width: 560px; padding: 0 20px;
+  }
+  #splash .fine b { color: #9a8fc0; font-weight: normal; }
+
+  #hud {
+    position: absolute; left: 22px; bottom: 18px; z-index: 5;
+    color: rgba(220, 215, 235, 0.55); font-size: 13px; letter-spacing: 0.12em;
+    transition: opacity 1s ease; user-select: none; pointer-events: none;
+  }
+  body.idle #hud { opacity: 0; }
+  #hud .theme { text-transform: uppercase; font-size: 15px; letter-spacing: 0.3em; color: rgba(232, 201, 136, 0.8); }
+  #hud .heard { font-style: italic; margin-top: 4px; min-height: 1.2em; color: rgba(180, 175, 205, 0.5); }
+  #meter { display: inline-block; width: 90px; height: 5px; background: rgba(255,255,255,0.1); border-radius: 3px; overflow: hidden; vertical-align: middle; margin-left: 8px; }
+  #meterFill { height: 100%; width: 0%; background: rgba(232, 201, 136, 0.7); border-radius: 3px; }
+  #srBadge, #genBadge { font-size: 11px; color: rgba(150,145,175,0.5); margin-top: 3px; }
+  #hudBrain { font-style: italic; color: rgba(180, 210, 190, 0.65); margin-top: 3px; min-height: 1.1em; }
+  #beatDot { display: inline-block; margin-left: 8px; color: #e8c988; opacity: 0; }
+  #hudMusic { display: none; color: rgba(232, 201, 136, 0.85); font-size: 12px; margin-top: 3px; letter-spacing: 0.2em; }
+
+  #settings {
+    position: absolute; right: 0; top: 0; bottom: 0; z-index: 8;
+    width: 280px; padding: 26px 22px; box-sizing: border-box;
+    background: rgba(8, 5, 16, 0.92); border-left: 1px solid rgba(217,176,108,0.25);
+    color: rgba(220, 215, 235, 0.8); font-size: 13px; letter-spacing: 0.06em;
+    transform: translateX(100%); transition: transform 0.4s ease;
+    overflow-y: auto;
+  }
+  #settings.open { transform: translateX(0); }
+  #settings h2 {
+    font-weight: normal; font-size: 15px; letter-spacing: 0.3em;
+    text-transform: uppercase; color: #d9b06c; margin: 0 0 18px 0;
+  }
+  #settings label { display: block; margin: 14px 0 4px; color: rgba(180,175,205,0.8); }
+  #settings .val { float: right; color: #e8c988; }
+  #settings input[type=range] { width: 100%; accent-color: #d9b06c; }
+  #settings .check { margin-top: 16px; }
+  #settings .check input { accent-color: #d9b06c; margin-right: 8px; }
+  #settings .hint { margin-top: 20px; font-size: 11px; color: rgba(150,145,175,0.55); line-height: 1.7; }
+</style>
+</head>
+<body>
+<canvas id="gl"></canvas>
+<canvas id="bc"></canvas>
+<canvas id="fx"></canvas>
+
+<div id="splash">
+  <h1>The Kingdom of Nye</h1>
+  <div class="sub">an Art Bell séance &nbsp;·&nbsp; audio-reactive &nbsp;·&nbsp; it hears what he says</div>
+  <button id="tune">Click to Tune In</button>
+  <div class="fine">
+    Needs the <b>microphone</b> - it listens to the room, so play the show out loud.<br>
+    When the talk turns to <b>aliens</b>, <b>demons</b>, <b>ghosts</b>, the <b>government</b>,
+    <b>cryptids</b>, or <b>time travel</b>, the visuals follow.<br><br>
+    <b>F</b> fullscreen &nbsp;·&nbsp; <b>1–7</b> force a mood &nbsp;·&nbsp; <b>0</b> auto &nbsp;·&nbsp;
+    <b>G</b> AI dream layer &nbsp;·&nbsp; <b>S</b> spectrum &nbsp;·&nbsp; best in Chrome
+  </div>
+</div>
+
+<div id="hud" style="opacity:0">
+  <div class="theme" id="hudTheme">the kingdom of nye</div>
+  <div>signal<span id="meter"><span id="meterFill"></span></span><span id="beatDot">●</span></div>
+  <div id="hudBrain"></div>
+  <div id="hudMusic">♫ bumper music</div>
+  <div class="heard" id="hudHeard"></div>
+  <div id="srBadge"></div>
+  <div id="genBadge"></div>
+</div>
+
+<aside id="settings">
+  <h2>Tuning</h2>
+  <label>dream cadence <span class="val" id="vCadence"></span></label>
+  <input type="range" id="sCadence" min="30" max="600" step="15">
+  <label>dream opacity <span class="val" id="vDream"></span></label>
+  <input type="range" id="sDream" min="0" max="100" step="5">
+  <label>reactivity <span class="val" id="vReact"></span></label>
+  <input type="range" id="sReact" min="50" max="200" step="10">
+  <label>milkdrop blend <span class="val" id="vChurn"></span></label>
+  <input type="range" id="sChurn" min="0" max="100" step="5">
+  <label>session image cap <span class="val" id="vCap"></span></label>
+  <input type="range" id="sCap" min="10" max="200" step="10">
+  <div class="check">
+    <label><input type="checkbox" id="sContinuity">visions evolve from each other</label>
+  </div>
+  <div class="hint">
+    F fullscreen · 1–7 pin mood · 0 auto<br>
+    G dream layer · B milkdrop preset<br>
+    S spectrum · C close this panel
+  </div>
+</aside>
+
+<script src="butterchurn.min.js"></script>
+<script src="butterchurn-presets.min.js"></script>
+<script>
+'use strict';
+
+/* ============================================================
+   SETTINGS - persisted knobs (C opens the drawer)
+   ============================================================ */
+const SETTINGS = Object.assign({
+  cadence: 240,       // ambient dream refresh, seconds
+  dreamOpacity: 0.8,  // dream layer max visibility
+  reactivity: 1.0,    // audio response multiplier
+  churn: 0.35,        // butterchurn blend ceiling
+  cap: 80,            // session image cap
+  continuity: true    // visions evolve from each other
+}, JSON.parse(localStorage.getItem('abv-settings') || '{}'));
+
+function saveSettings() {
+  localStorage.setItem('abv-settings', JSON.stringify(SETTINGS));
+}
+
+/* ============================================================
+   THEMES - shader params + keywords + particle flavor
+   ============================================================ */
+const THEMES = {
+  nye: {
+    label: 'the kingdom of nye',
+    colA: [0.03, 0.02, 0.10], colB: [0.22, 0.10, 0.42], colC: [0.55, 0.38, 0.16],
+    warp: 1.6, zoom: 1.6, flow: [0.010, 0.004], stars: 0.9, scan: 0.05, tunnel: 0.0, ember: 0.18,
+    keywords: []
+  },
+  aliens: {
+    label: 'visitors',
+    colA: [0.01, 0.05, 0.03], colB: [0.04, 0.42, 0.24], colC: [0.35, 0.95, 0.65],
+    warp: 2.4, zoom: 1.8, flow: [0.020, -0.010], stars: 1.0, scan: 0.10, tunnel: 0.15, ember: 0.0,
+    keywords: ['alien', 'aliens', 'ufo', 'ufos', 'extraterrestrial', 'extraterrestrials',
+      'abduction', 'abducted', 'abductee', 'saucer', 'saucers', 'grays', 'greys',
+      'roswell', 'area 51', 'crop circle', 'crop circles', 'disclosure', 'mothership',
+      'spacecraft', 'spaceship', 'martian', 'martians', 'contactee', 'close encounter']
+  },
+  demons: {
+    label: 'the adversary',
+    colA: [0.05, 0.00, 0.00], colB: [0.50, 0.07, 0.02], colC: [1.00, 0.42, 0.10],
+    warp: 3.0, zoom: 2.2, flow: [0.000, -0.050], stars: 0.0, scan: 0.0, tunnel: 0.0, ember: 1.0,
+    keywords: ['demon', 'demons', 'demonic', 'devil', 'devils', 'satan', 'satanic', 'lucifer',
+      'exorcism', 'exorcist', 'possessed', 'possession', 'hell', 'evil', 'occult',
+      'ouija', 'ritual', 'antichrist', 'damned', 'infernal']
+  },
+  ghosts: {
+    label: 'restless spirits',
+    colA: [0.01, 0.02, 0.04], colB: [0.22, 0.32, 0.48], colC: [0.80, 0.90, 1.00],
+    warp: 2.0, zoom: 1.3, flow: [0.015, 0.008], stars: 0.3, scan: 0.0, tunnel: 0.0, ember: 0.25,
+    keywords: ['ghost', 'ghosts', 'ghostly', 'spirit', 'spirits', 'haunted', 'haunting',
+      'paranormal', 'poltergeist', 'seance', 'apparition', 'apparitions', 'afterlife',
+      'medium', 'psychic', 'ectoplasm', 'graveyard', 'cemetery', 'deceased', 'entity', 'entities']
+  },
+  gov: {
+    label: 'shadow government',
+    colA: [0.00, 0.02, 0.00], colB: [0.02, 0.24, 0.08], colC: [0.20, 0.90, 0.35],
+    warp: 1.2, zoom: 2.6, flow: [0.030, 0.000], stars: 0.15, scan: 1.0, tunnel: 0.0, ember: 0.0,
+    keywords: ['government', 'conspiracy', 'conspiracies', 'cover up', 'coverup', 'cover-up',
+      'cia', 'fbi', 'nsa', 'pentagon', 'black helicopter', 'black helicopters', 'chemtrail',
+      'chemtrails', 'men in black', 'classified', 'top secret', 'surveillance', 'new world order',
+      'illuminati', 'deep state', 'majestic']
+  },
+  cryptids: {
+    label: 'something in the woods',
+    colA: [0.01, 0.02, 0.01], colB: [0.07, 0.15, 0.06], colC: [0.55, 0.70, 0.30],
+    warp: 2.2, zoom: 1.9, flow: [0.008, 0.002], stars: 0.5, scan: 0.0, tunnel: 0.0, ember: 0.3,
+    keywords: ['bigfoot', 'sasquatch', 'chupacabra', 'mothman', 'skinwalker', 'skinwalkers',
+      'cryptid', 'cryptids', 'creature', 'creatures', 'beast', 'werewolf', 'yeti',
+      'loch ness', 'monster', 'monsters', 'howl', 'footprints']
+  },
+  time: {
+    label: 'down the wormhole',
+    colA: [0.02, 0.00, 0.06], colB: [0.20, 0.05, 0.50], colC: [0.10, 0.80, 0.90],
+    warp: 2.6, zoom: 1.5, flow: [0.000, 0.080], stars: 0.8, scan: 0.0, tunnel: 1.0, ember: 0.0,
+    keywords: ['time travel', 'time traveler', 'time machine', 'wormhole', 'wormholes',
+      'dimension', 'dimensions', 'dimensional', 'interdimensional', 'quantum', 'portal',
+      'portals', 'vortex', 'parallel universe', 'multiverse', 'timeline', "mel's hole",
+      'mels hole', 'antigravity', 'tesla']
+  }
+};
+const THEME_ORDER = ['nye', 'aliens', 'demons', 'ghosts', 'gov', 'cryptids', 'time'];
+
+/* ============================================================
+   STATE
+   ============================================================ */
+const state = {
+  running: false,
+  demoMode: false,          // no mic - synthesized levels
+  forcedTheme: null,        // manual override via number keys
+  scores: {},               // theme -> decaying keyword score
+  weights: {},              // theme -> current blend weight (lerped)
+  bass: 0, mid: 0, treble: 0, rms: 0,
+  agcPeak: 0.15,            // slow auto-gain reference
+  lastWords: [],            // recent trigger words for HUD
+  srStatus: '',
+  currentTarget: 'nye', themeChangedAt: 0,
+  showSpectrum: false,
+  beat: 0, beatFired: false,   // spectral-flux onset pulse
+  musicScore: 0, musicMode: false,
+  time: 0
+};
+for (const k of THEME_ORDER) { state.scores[k] = 0; state.weights[k] = (k === 'nye' ? 1 : 0); }
+
+const SCORE_HALF_LIFE = 45;   // seconds for a keyword hit to decay by half
+const SCORE_THRESHOLD = 0.55; // min score to pull us off the home theme
+const BLEND_TAU = 3.2;        // seconds - theme crossfade time constant (~8s full morph)
+
+/* ============================================================
+   WEBGL NEBULA LAYER
+   ============================================================ */
+const glCanvas = document.getElementById('gl');
+const gl = glCanvas.getContext('webgl', { antialias: false, alpha: false });
+
+const VERT = `
+attribute vec2 a_pos;
+void main(){ gl_Position = vec4(a_pos, 0.0, 1.0); }
+`;
+
+const FRAG = `
+precision highp float;
+uniform vec2  u_res;
+uniform float u_time;
+uniform float u_bass, u_mid, u_treble, u_rms;
+uniform vec3  u_colA, u_colB, u_colC;
+uniform float u_warp, u_zoom, u_stars, u_scan, u_tunnel, u_ember;
+uniform vec2  u_flow;
+uniform sampler2D u_img0, u_img1;
+uniform float u_imgMix, u_imgAmt;
+uniform float u_beat;
+
+float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+
+float noise(vec2 p){
+  vec2 i = floor(p), f = fract(p);
+  vec2 u = f * f * (3.0 - 2.0 * f);
+  return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), u.x),
+             mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), u.x), u.y);
+}
+
+float fbm(vec2 p){
+  float v = 0.0, a = 0.5;
+  mat2 m = mat2(1.6, 1.2, -1.2, 1.6);
+  for (int i = 0; i < 5; i++){ v += a * noise(p); p = m * p; a *= 0.5; }
+  return v;
+}
+
+void main(){
+  vec2 uv = (gl_FragCoord.xy - 0.5 * u_res) / u_res.y;
+
+  // wormhole remap (polar tunnel), blended in by u_tunnel
+  float rad = length(uv) + 1e-4;
+  // abs() mirrors the angle so the atan branch cut doesn't leave a seam
+  vec2 tun = vec2(abs(atan(uv.y, uv.x)) * 0.6366, 0.35 / rad + u_time * 0.45);
+  vec2 p = mix(uv, tun, u_tunnel);
+
+  p *= u_zoom * (1.0 - 0.15 * u_bass - 0.05 * u_beat);
+  p += u_flow * u_time;
+
+  float t = u_time * 0.06;
+  vec2 q = vec2(fbm(p + t), fbm(p + vec2(5.2, 1.3) - t));
+  vec2 r = vec2(fbm(p + u_warp * q + vec2(1.7, 9.2) + t * 1.5),
+                fbm(p + u_warp * q + vec2(8.3, 2.8) - t * 1.2));
+  float f = fbm(p + u_warp * r + u_mid * 0.4);
+
+  vec3 col = mix(u_colA, u_colB, clamp(f * f * 2.3, 0.0, 1.0));
+  col = mix(col, u_colC, clamp(length(q) * 0.55, 0.0, 1.0) * 0.6);
+  col += u_colC * r.x * r.y * 0.55;
+  col *= 0.72 + 0.55 * u_rms + 0.35 * u_bass + 0.22 * u_beat;
+
+  // generative dream layer: AI-dreamed image melted by the same noise + audio
+  if (u_imgAmt > 0.005) {
+    vec2 wuv = gl_FragCoord.xy / u_res;
+    wuv.y = 1.0 - wuv.y;
+    wuv = 0.5 + (wuv - 0.5) * (0.94 + 0.03 * sin(u_time * 0.05));
+    wuv += (r - 0.5) * (0.02 + 0.10 * u_bass);
+    vec3 dream = mix(texture2D(u_img0, wuv).rgb, texture2D(u_img1, wuv).rgb, u_imgMix);
+    dream *= 0.55 + 0.55 * u_rms + 0.25 * u_bass;
+    col = mix(col, dream + col * 0.30, u_imgAmt);
+  }
+
+  // starfield (cell-hashed points, treble twinkle)
+  if (u_stars > 0.01) {
+    vec2 sp = uv * u_res.y * 0.9;
+    vec2 cell = floor(sp / 22.0);
+    float h = hash(cell);
+    if (h > 1.0 - u_stars * 0.12) {
+      vec2 sc = (cell + vec2(hash(cell + 1.1), hash(cell + 2.3))) * 22.0;
+      float d = length(sp - sc);
+      float tw = 0.5 + 0.5 * sin(u_time * (2.0 + h * 6.0) + h * 40.0) + u_treble * 1.6 + u_beat * 1.2;
+      col += vec3(0.9, 0.95, 1.0) * smoothstep(2.2, 0.0, d) * tw * u_stars * 0.8;
+    }
+  }
+
+  // hot glow rising from the bottom (embers / fog / dial light)
+  col += u_colB * u_ember * smoothstep(0.1, -0.6, uv.y) * (0.35 + 0.5 * u_bass);
+
+  // scanlines
+  col *= 1.0 - u_scan * 0.22 * (0.5 + 0.5 * sin(gl_FragCoord.y * 1.7 + u_time * 8.0));
+
+  // vignette
+  col *= smoothstep(1.30, 0.35, length(uv));
+
+  gl_FragColor = vec4(col, 1.0);
+}
+`;
+
+function compile(type, src) {
+  const s = gl.createShader(type);
+  gl.shaderSource(s, src);
+  gl.compileShader(s);
+  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) {
+    throw new Error('shader: ' + gl.getShaderInfoLog(s));
+  }
+  return s;
+}
+
+const prog = gl.createProgram();
+gl.attachShader(prog, compile(gl.VERTEX_SHADER, VERT));
+gl.attachShader(prog, compile(gl.FRAGMENT_SHADER, FRAG));
+gl.linkProgram(prog);
+if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) {
+  throw new Error('link: ' + gl.getProgramInfoLog(prog));
+}
+gl.useProgram(prog);
+
+const quad = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, quad);
+gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
+const aPos = gl.getAttribLocation(prog, 'a_pos');
+gl.enableVertexAttribArray(aPos);
+gl.vertexAttribPointer(aPos, 2, gl.FLOAT, false, 0, 0);
+
+const U = {};
+for (const name of ['u_res', 'u_time', 'u_bass', 'u_mid', 'u_treble', 'u_rms',
+  'u_colA', 'u_colB', 'u_colC', 'u_warp', 'u_zoom', 'u_stars', 'u_scan',
+  'u_tunnel', 'u_ember', 'u_flow', 'u_img0', 'u_img1', 'u_imgMix', 'u_imgAmt', 'u_beat']) {
+  U[name] = gl.getUniformLocation(prog, name);
+}
+
+// two dream textures, ping-ponged as new AI images arrive
+function makeDreamTex(unit) {
+  const tex = gl.createTexture();
+  gl.activeTexture(gl.TEXTURE0 + unit);
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE,
+    new Uint8Array([0, 0, 0, 255]));
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  return tex;
+}
+const dreamTex = [makeDreamTex(0), makeDreamTex(1)];
+gl.uniform1i(U.u_img0, 0);
+gl.uniform1i(U.u_img1, 1);
+
+/* ============================================================
+   2D OVERLAY LAYER (theme sprites + captions)
+   ============================================================ */
+const fxCanvas = document.getElementById('fx');
+const ctx = fxCanvas.getContext('2d');
+
+let W = 0, H = 0, DPR = 1;
+function resize() {
+  DPR = Math.min(window.devicePixelRatio || 1, 2);
+  W = window.innerWidth; H = window.innerHeight;
+  glCanvas.width = Math.floor(W * DPR); glCanvas.height = Math.floor(H * DPR);
+  fxCanvas.width = Math.floor(W * DPR); fxCanvas.height = Math.floor(H * DPR);
+  gl.viewport(0, 0, glCanvas.width, glCanvas.height);
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+}
+window.addEventListener('resize', resize);
+resize();
+
+const particles = [];
+const rnd = (a, b) => a + Math.random() * (b - a);
+
+function softCircle(x, y, r, color, alpha) {
+  const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+  g.addColorStop(0, color.replace('$A', alpha.toFixed(3)));
+  g.addColorStop(1, color.replace('$A', '0'));
+  ctx.fillStyle = g;
+  ctx.fillRect(x - r, y - r, r * 2, r * 2);
+}
+
+/* --- particle behaviors, keyed by type --- */
+const BEHAVIOR = {
+
+  ripple: {
+    update(p, dt) { p.r += dt * (55 + state.bass * 240); p.life -= dt * 0.35; },
+    draw(p) {
+      ctx.strokeStyle = `rgba(217,176,108,${(p.life * 0.28).toFixed(3)})`;
+      ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2); ctx.stroke();
+    }
+  },
+
+  saucer: {
+    update(p, dt) {
+      p.x += p.vx * dt * (1 + state.mid);
+      p.y = p.y0 + Math.sin(state.time * 0.8 + p.seed * 9) * 22;
+      p.life -= dt / p.ttl;
+      if (p.x < -140 || p.x > W + 140) p.life = 0;
+    },
+    draw(p) {
+      const a = Math.min(1, p.life * 4) * 0.75;
+      ctx.save(); ctx.translate(p.x, p.y); ctx.scale(p.s, p.s); ctx.globalAlpha = a;
+      // beam, sometimes, pulsing with bass
+      if (p.beam && Math.sin(state.time * 1.4 + p.seed * 20) > 0.25) {
+        const bg = ctx.createLinearGradient(0, 8, 0, 190);
+        bg.addColorStop(0, 'rgba(140,255,190,0.30)');
+        bg.addColorStop(1, 'rgba(140,255,190,0)');
+        ctx.fillStyle = bg;
+        ctx.beginPath(); ctx.moveTo(-9, 8); ctx.lineTo(9, 8);
+        ctx.lineTo(46, 190); ctx.lineTo(-46, 190); ctx.closePath(); ctx.fill();
+      }
+      // dome
+      ctx.fillStyle = 'rgba(180,255,215,0.85)';
+      ctx.beginPath(); ctx.arc(0, -6, 9, Math.PI, 0); ctx.fill();
+      // hull
+      ctx.fillStyle = 'rgba(90,160,120,0.95)';
+      ctx.beginPath(); ctx.ellipse(0, 0, 30, 9, 0, 0, Math.PI * 2); ctx.fill();
+      // running lights
+      for (let i = -1; i <= 1; i++) {
+        const on = Math.sin(state.time * 6 + i * 2.1 + p.seed * 30) > 0;
+        ctx.fillStyle = on ? 'rgba(220,255,160,0.95)' : 'rgba(60,90,70,0.8)';
+        ctx.beginPath(); ctx.arc(i * 15, 3, 2.4, 0, Math.PI * 2); ctx.fill();
+      }
+      ctx.restore(); ctx.globalAlpha = 1;
+    }
+  },
+
+  ember: {
+    update(p, dt) {
+      p.y -= dt * (34 + state.bass * 130) * p.s;
+      p.x += Math.sin(state.time * 2.2 + p.seed * 12) * 24 * dt;
+      p.life -= dt / p.ttl;
+    },
+    draw(p) {
+      const flick = 0.6 + 0.4 * Math.sin(state.time * 11 + p.seed * 50);
+      softCircle(p.x, p.y, 3.2 * p.s + state.treble * 2.5,
+        'rgba(255,140,40,$A)', p.life * flick * 0.9);
+    }
+  },
+
+  smoke: {
+    update(p, dt) {
+      p.y -= dt * 14; p.x += p.vx * dt; p.r += dt * 9;
+      p.life -= dt / p.ttl;
+    },
+    draw(p) {
+      softCircle(p.x, p.y, p.r, 'rgba(60,10,5,$A)', p.life * 0.16);
+    }
+  },
+
+  sigil: {
+    update(p, dt) { p.life -= dt / p.ttl; },
+    draw(p) {
+      const flick = Math.sin(state.time * 17 + p.seed * 40) > -0.3 ? 1 : 0.25;
+      const a = Math.sin(Math.min(1, p.life) * Math.PI) * 0.15 * flick;
+      ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.seed * 6.28 + state.time * 0.05);
+      ctx.strokeStyle = `rgba(255,90,30,${a.toFixed(3)})`;
+      ctx.lineWidth = 1.2;
+      ctx.beginPath(); ctx.arc(0, 0, p.r, 0, Math.PI * 2); ctx.stroke();
+      ctx.beginPath();
+      for (let i = 0; i <= 5; i++) {
+        const ang = -Math.PI / 2 + i * (Math.PI * 4 / 5);
+        const x = Math.cos(ang) * p.r, y = Math.sin(ang) * p.r;
+        i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+      }
+      ctx.stroke(); ctx.restore();
+    }
+  },
+
+  orb: {
+    update(p, dt) {
+      p.x += Math.sin(state.time * 0.5 + p.seed * 10) * 12 * dt;
+      p.y += Math.cos(state.time * 0.4 + p.seed * 7) * 10 * dt - dt * 6;
+      p.life -= dt / p.ttl;
+    },
+    draw(p) {
+      const a = Math.sin(Math.min(1, p.life) * Math.PI) * (0.5 + state.rms * 0.5);
+      softCircle(p.x, p.y, 5 + p.s * 7, 'rgba(210,230,255,$A)', a * 0.7);
+    }
+  },
+
+  wisp: {
+    update(p, dt) {
+      p.x += p.vx * dt; p.y += Math.sin(state.time * 0.7 + p.seed * 8) * 16 * dt;
+      p.life -= dt / p.ttl;
+    },
+    draw(p) {
+      const a = Math.sin(Math.min(1, p.life) * Math.PI) * 0.10;
+      ctx.save(); ctx.translate(p.x, p.y);
+      ctx.rotate(Math.sin(state.time * 0.3 + p.seed * 5) * 0.5);
+      const g = ctx.createRadialGradient(0, 0, 0, 0, 0, p.r);
+      g.addColorStop(0, `rgba(190,215,255,${a.toFixed(3)})`);
+      g.addColorStop(1, 'rgba(190,215,255,0)');
+      ctx.fillStyle = g;
+      ctx.beginPath(); ctx.ellipse(0, 0, p.r * 1.8, p.r * 0.55, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+    }
+  },
+
+  redact: {
+    update(p, dt) { p.x += p.vx * dt; p.life -= dt / p.ttl; },
+    draw(p) {
+      const a = Math.sin(Math.min(1, p.life) * Math.PI) * 0.5;
+      ctx.fillStyle = `rgba(0,0,0,${(a * 0.9).toFixed(3)})`;
+      ctx.fillRect(p.x, p.y, p.w, p.h);
+      ctx.strokeStyle = `rgba(40,220,90,${(a * 0.5).toFixed(3)})`;
+      ctx.lineWidth = 1;
+      ctx.strokeRect(p.x, p.y, p.w, p.h);
+    }
+  },
+
+  blip: {
+    update(p, dt) { p.life -= dt / p.ttl; },
+    draw(p) {
+      const t = 1 - Math.min(1, p.life);
+      const a = Math.sin(Math.min(1, p.life) * Math.PI) * 0.55;
+      ctx.strokeStyle = `rgba(60,255,120,${a.toFixed(3)})`;
+      ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.arc(p.x, p.y, 4 + t * 26, 0, Math.PI * 2); ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(p.x - 34, p.y); ctx.lineTo(p.x + 34, p.y);
+      ctx.moveTo(p.x, p.y - 34); ctx.lineTo(p.x, p.y + 34);
+      ctx.stroke();
+    }
+  },
+
+  eyes: {
+    update(p, dt) { p.life -= dt / p.ttl; },
+    draw(p) {
+      // blink: collapse vertically now and then
+      const blink = Math.sin(state.time * 1.3 + p.seed * 25) > 0.93 ? 0.12 : 1;
+      const a = Math.sin(Math.min(1, p.life) * Math.PI) * 0.8;
+      for (const dx of [-p.gap, p.gap]) {
+        ctx.save(); ctx.translate(p.x + dx, p.y); ctx.scale(1, blink);
+        softCircle(0, 0, 6 * p.s, 'rgba(200,230,110,$A)', a);
+        ctx.fillStyle = `rgba(230,255,150,${a.toFixed(3)})`;
+        ctx.beginPath(); ctx.ellipse(0, 0, 2.6 * p.s, 3.4 * p.s, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.restore();
+      }
+    }
+  },
+
+  streak: {
+    update(p, dt) {
+      p.d += dt * (140 + state.bass * 500) * (0.4 + p.d / 220);
+      p.life -= dt / p.ttl;
+      if (p.d > Math.max(W, H)) p.life = 0;
+    },
+    draw(p) {
+      const cx = W / 2, cy = H / 2;
+      const x1 = cx + Math.cos(p.ang) * p.d, y1 = cy + Math.sin(p.ang) * p.d;
+      const x2 = cx + Math.cos(p.ang) * (p.d + 14 + state.bass * 50);
+      const y2 = cy + Math.sin(p.ang) * (p.d + 14 + state.bass * 50);
+      const a = Math.min(1, p.life * 3) * Math.min(1, p.d / 130) * 0.6;
+      ctx.strokeStyle = `rgba(140,230,255,${a.toFixed(3)})`;
+      ctx.lineWidth = 1.4;
+      ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+    }
+  },
+
+  caption: {
+    update(p, dt) { p.y -= dt * 11; p.life -= dt / p.ttl; },
+    draw(p) {
+      const a = Math.sin(Math.min(1, p.life) * Math.PI) * 0.30;
+      ctx.font = `italic ${p.size}px Georgia, serif`;
+      ctx.fillStyle = `rgba(225,218,240,${a.toFixed(3)})`;
+      ctx.textAlign = 'center';
+      ctx.fillText(`… ${p.text} …`, p.x, p.y);
+    }
+  }
+};
+
+function spawn(type, props) {
+  particles.push(Object.assign({ type, life: 1, seed: Math.random(), ttl: 1, s: 1 }, props));
+}
+
+/* --- per-theme spawners: called every frame with the theme's blend weight --- */
+const SPAWNERS = {
+  nye(w, dt) {
+    if (Math.random() < dt * 0.5 * w * (0.5 + state.rms)) {
+      spawn('ripple', { x: W / 2, y: H * 0.86, r: 10, ttl: 3 });
+    }
+  },
+  aliens(w, dt) {
+    const count = particles.filter(p => p.type === 'saucer').length;
+    if (count < 3 * w && Math.random() < dt * 0.25 * w) {
+      const fromLeft = Math.random() < 0.5;
+      spawn('saucer', {
+        x: fromLeft ? -100 : W + 100, y0: rnd(H * 0.12, H * 0.55), y: 0,
+        vx: (fromLeft ? 1 : -1) * rnd(18, 45), s: rnd(0.6, 1.4),
+        beam: Math.random() < 0.4, ttl: 40
+      });
+    }
+  },
+  demons(w, dt) {
+    const rate = dt * w * (10 + state.mid * 26);
+    let n = Math.floor(rate) + (Math.random() < rate % 1 ? 1 : 0);
+    while (n-- > 0) spawn('ember', { x: rnd(0, W), y: H + 10, s: rnd(0.5, 1.6), ttl: rnd(3, 7) });
+    if (Math.random() < dt * 1.2 * w) {
+      spawn('smoke', { x: rnd(0, W), y: H + 40, vx: rnd(-8, 8), r: rnd(40, 90), ttl: rnd(6, 10) });
+    }
+    if (Math.random() < dt * 0.10 * w) {
+      spawn('sigil', { x: rnd(W * 0.2, W * 0.8), y: rnd(H * 0.15, H * 0.7), r: rnd(40, 110), ttl: rnd(2.5, 4) });
+    }
+  },
+  ghosts(w, dt) {
+    if (Math.random() < dt * 0.9 * w) {
+      spawn('orb', { x: rnd(0, W), y: rnd(H * 0.2, H * 0.9), s: rnd(0.4, 1.2), ttl: rnd(5, 9) });
+    }
+    if (Math.random() < dt * 0.35 * w) {
+      spawn('wisp', { x: rnd(-50, W), y: rnd(H * 0.1, H * 0.8), vx: rnd(6, 20), r: rnd(50, 120), ttl: rnd(8, 14) });
+    }
+  },
+  gov(w, dt) {
+    if (Math.random() < dt * 0.5 * w) {
+      spawn('redact', {
+        x: rnd(-100, W * 0.8), y: rnd(H * 0.1, H * 0.9),
+        w: rnd(90, 300), h: rnd(12, 22), vx: rnd(-14, 14), ttl: rnd(3, 6)
+      });
+    }
+    if (Math.random() < dt * 0.6 * w * (0.5 + state.treble)) {
+      spawn('blip', { x: rnd(W * 0.1, W * 0.9), y: rnd(H * 0.1, H * 0.9), ttl: rnd(1.2, 2.2) });
+    }
+  },
+  cryptids(w, dt) {
+    const count = particles.filter(p => p.type === 'eyes').length;
+    if (count < 4 * w && Math.random() < dt * 0.35 * w) {
+      spawn('eyes', {
+        x: rnd(W * 0.06, W * 0.94), y: rnd(H * 0.55, H * 0.92),
+        gap: rnd(9, 16), s: rnd(0.7, 1.4), ttl: rnd(4, 9)
+      });
+    }
+    if (Math.random() < dt * 2.0 * w) { // fireflies reuse embers, tiny + slow
+      spawn('orb', { x: rnd(0, W), y: rnd(H * 0.4, H), s: rnd(0.15, 0.4), ttl: rnd(3, 6) });
+    }
+  },
+  time(w, dt) {
+    const rate = dt * w * (14 + state.rms * 30);
+    let n = Math.floor(rate) + (Math.random() < rate % 1 ? 1 : 0);
+    while (n-- > 0) spawn('streak', { ang: rnd(0, Math.PI * 2), d: rnd(10, 70), ttl: rnd(2, 4) });
+  }
+};
+
+/* ============================================================
+   AUDIO - mic → FFT → bass/mid/treble/rms with slow AGC
+   ============================================================ */
+let analyser = null, freqData = null, audioCtx = null, micSource = null;
+
+async function initAudio() {
+  const stream = await navigator.mediaDevices.getUserMedia({
+    audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false }
+  });
+  audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  micSource = audioCtx.createMediaStreamSource(stream);
+  analyser = audioCtx.createAnalyser();
+  analyser.fftSize = 2048;
+  analyser.smoothingTimeConstant = 0.55;
+  micSource.connect(analyser);
+  freqData = new Uint8Array(analyser.frequencyBinCount);
+}
+
+/* --- spectral-flux beat detection + bumper-music discrimination --- */
+const FLUX = { prev: null, mean: 0, dev: 0.01, lastBeat: 0, intervals: [] };
+
+function detectBeat() {
+  if (!FLUX.prev) { FLUX.prev = new Uint8Array(freqData); return; }
+  const lim = Math.min(freqData.length,
+    Math.ceil(7000 / (audioCtx.sampleRate / 2) * freqData.length));
+  let flux = 0;
+  for (let i = 2; i < lim; i++) {
+    const d = freqData[i] - FLUX.prev[i];
+    if (d > 0) flux += d;
+  }
+  FLUX.prev.set(freqData);
+  flux /= lim * 255;
+  FLUX.mean += (flux - FLUX.mean) * 0.05;
+  FLUX.dev += (Math.abs(flux - FLUX.mean) - FLUX.dev) * 0.05;
+  const threshold = FLUX.mean + 1.8 * FLUX.dev + 0.004;
+  if (flux > threshold && state.time - FLUX.lastBeat > 0.18) {
+    const interval = state.time - FLUX.lastBeat;
+    FLUX.lastBeat = state.time;
+    state.beat = 1;
+    state.beatFired = true;
+    // music (bumpers) = steady beat intervals; speech onsets are irregular
+    if (interval < 2.0) {
+      FLUX.intervals.push(interval);
+      if (FLUX.intervals.length > 8) FLUX.intervals.shift();
+    }
+    let periodic = false;
+    if (FLUX.intervals.length >= 5) {
+      const m = FLUX.intervals.reduce((a, b) => a + b) / FLUX.intervals.length;
+      const v = FLUX.intervals.reduce((a, b) => a + (b - m) * (b - m), 0) / FLUX.intervals.length;
+      periodic = m > 0.22 && m < 1.5 && Math.sqrt(v) / m < 0.28;
+    }
+    state.musicScore = Math.min(1, state.musicScore + (periodic ? 0.16 : 0.04));
+  }
+}
+
+function bandAvg(lo, hi) { // Hz range → average bin energy 0..1
+  const nyquist = audioCtx.sampleRate / 2;
+  const n = freqData.length;
+  let a = Math.max(0, Math.floor(lo / nyquist * n));
+  let b = Math.min(n - 1, Math.ceil(hi / nyquist * n));
+  let sum = 0;
+  for (let i = a; i <= b; i++) sum += freqData[i];
+  return sum / ((b - a + 1) * 255);
+}
+
+function updateAudio(dt) {
+  let rawBass, rawMid, rawTreble, rawRms;
+  if (state.demoMode || !analyser) {
+    // synthesized breathing so the thing still lives without a mic
+    const t = state.time;
+    rawBass = 0.20 + 0.16 * Math.max(0, Math.sin(t * 1.9) + 0.4 * Math.sin(t * 4.7));
+    rawMid = 0.18 + 0.10 * (0.5 + 0.5 * Math.sin(t * 2.7 + 1));
+    rawTreble = 0.12 + 0.08 * (0.5 + 0.5 * Math.sin(t * 5.3 + 2));
+    rawRms = 0.22 + 0.12 * (0.5 + 0.5 * Math.sin(t * 1.1));
+  } else {
+    analyser.getByteFrequencyData(freqData);
+    detectBeat();
+    rawBass = bandAvg(30, 140);
+    rawMid = bandAvg(140, 2000);
+    rawTreble = bandAvg(2000, 9000);
+    rawRms = bandAvg(30, 9000);
+    // slow AGC so quiet late-night volume still drives visuals
+    state.agcPeak = Math.max(state.agcPeak * (1 - dt * 0.02), rawRms, 0.04);
+    const g = 0.45 / state.agcPeak;
+    rawBass = Math.min(1, rawBass * g);
+    rawMid = Math.min(1, rawMid * g);
+    rawTreble = Math.min(1, rawTreble * g);
+    rawRms = Math.min(1, rawRms * g);
+  }
+  // demo mode gets a synthetic slow heartbeat so the beat visuals still live
+  if ((state.demoMode || !analyser) && state.time - FLUX.lastBeat > 1.9) {
+    FLUX.lastBeat = state.time;
+    state.beat = 1; state.beatFired = true;
+  }
+  // reactivity knob, then fast attack / slow release smoothing
+  const rk = SETTINGS.reactivity;
+  rawBass = Math.min(1, rawBass * rk);
+  rawMid = Math.min(1, rawMid * rk);
+  rawTreble = Math.min(1, rawTreble * rk);
+  rawRms = Math.min(1, rawRms * rk);
+  const smooth = (cur, target) => target > cur
+    ? cur + (target - cur) * Math.min(1, dt * 12)
+    : cur + (target - cur) * Math.min(1, dt * 3);
+  state.bass = smooth(state.bass, rawBass);
+  state.mid = smooth(state.mid, rawMid);
+  state.treble = smooth(state.treble, rawTreble);
+  state.rms = smooth(state.rms, rawRms);
+
+  // beat pulse decay + music mode hysteresis
+  state.beat = Math.max(0, state.beat - dt / 0.35);
+  state.musicScore = Math.max(0, state.musicScore - dt / 6);
+  state.musicMode = state.musicMode ? state.musicScore > 0.30 : state.musicScore > 0.55;
+}
+
+/* ============================================================
+   SPEECH RECOGNITION - keywords → theme scores
+   ============================================================ */
+let recognition = null, srWanted = false;
+
+// phrase list per theme, multi-word phrases matched against the transcript string
+const PHRASES = [];
+for (const key of THEME_ORDER) {
+  for (const kw of THEMES[key].keywords) PHRASES.push({ theme: key, phrase: kw });
+}
+// longest first so "time travel" wins before "time" would (no bare "time" anyway)
+PHRASES.sort((a, b) => b.phrase.length - a.phrase.length);
+
+function hearTranscript(text) {
+  GEN.transcript.push(text.trim());
+  if (GEN.transcript.length > 6) GEN.transcript.shift();
+  const t = ' ' + text.toLowerCase().replace(/[^a-z0-9' ]+/g, ' ') + ' ';
+  let consumed = t;
+  for (const { theme, phrase } of PHRASES) {
+    const needle = ' ' + phrase + ' ';
+    let idx = consumed.indexOf(needle);
+    while (idx !== -1) {
+      state.scores[theme] += 1.0;
+      noteWord(phrase, theme);
+      consumed = consumed.slice(0, idx + 1) + ' '.repeat(phrase.length) + consumed.slice(idx + 1 + phrase.length);
+      idx = consumed.indexOf(needle);
+    }
+  }
+}
+
+function noteWord(word, theme) {
+  state.lastWords.push(word);
+  if (state.lastWords.length > 4) state.lastWords.shift();
+  document.getElementById('hudHeard').textContent = '"…' + state.lastWords.join(' … ') + '…"';
+  spawn('caption', {
+    text: word, x: rnd(W * 0.25, W * 0.75), y: rnd(H * 0.35, H * 0.75),
+    size: rnd(20, 34), ttl: rnd(6, 9)
+  });
+}
+
+function initSpeech() {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) {
+    state.srStatus = 'speech recognition unavailable - audio-reactive only (keys 1–7 set the mood)';
+    return;
+  }
+  srWanted = true;
+  recognition = new SR();
+  recognition.continuous = true;
+  recognition.interimResults = true;
+  recognition.lang = 'en-US';
+
+  recognition.onresult = (ev) => {
+    for (let i = ev.resultIndex; i < ev.results.length; i++) {
+      if (ev.results[i].isFinal) hearTranscript(ev.results[i][0].transcript);
+    }
+    state.srStatus = 'listening for the weird stuff…';
+  };
+  recognition.onerror = (ev) => {
+    if (ev.error === 'not-allowed' || ev.error === 'service-not-allowed') {
+      srWanted = false;
+      state.srStatus = 'speech recognition blocked - audio-reactive only (keys 1–7 set the mood)';
+    }
+  };
+  // Chrome kills continuous recognition every minute or so; resurrect it
+  recognition.onend = () => {
+    if (srWanted) setTimeout(() => { try { recognition.start(); } catch (e) {} }, 300);
+  };
+  try {
+    recognition.start();
+    state.srStatus = 'listening for the weird stuff…';
+  } catch (e) {
+    state.srStatus = 'speech recognition failed to start - audio-reactive only';
+  }
+}
+
+/* ============================================================
+   GENERATIVE DREAM LAYER - Gemini images via the local server
+   ============================================================ */
+const GEN = {
+  on: true, serverOk: false, busy: false,
+  count: 0, costPer: 0.039,
+  lastGen: -999, front: 0, // front = texture unit currently shown
+  mix: 0, mixTarget: 0, amt: 0, amtTarget: 0,
+  hasImage: false, lastDataUrl: null, transcript: [],
+  base: location.protocol.startsWith('http') ? '' : 'http://localhost:8765'
+};
+
+const STYLE = {
+  nye: 'a vast Nevada desert at night under a swirling violet starfield, a lone AM radio tower with a red beacon, retro 1990s late-night radio surrealism',
+  aliens: 'eerie green flying saucers over a desert highway at night, an abduction beam of light, retro sci-fi pulp surrealism',
+  demons: 'infernal smoke and rising embers, occult geometry burning in darkness, ominous deep red and black inferno',
+  ghosts: 'pale translucent apparitions drifting through moonlit fog, ectoplasmic mist, blue-white haze, victorian gloom',
+  gov: 'shadowy figures in black suits beside black helicopters, redacted documents, green phosphor surveillance monitors, conspiracy noir',
+  cryptids: 'an enormous shadowy creature with glowing eyes deep in a dark pine forest, fog and moonlight, cryptid folklore painting',
+  time: 'a swirling cosmic wormhole of fractal light, melting clocks and dissolving galaxies, astral vortex'
+};
+
+function buildDreamPrompt(theme) {
+  // the brain's custom scene beats the canned theme style while it's fresh
+  const brainScene = (BRAIN.data && BRAIN.data.scene_prompt && state.time < BRAIN.until)
+    ? BRAIN.data.scene_prompt : null;
+  const base = brainScene || STYLE[theme];
+  const heard = GEN.transcript.slice(-3).join(' ').split(/\s+/).slice(-24).join(' ');
+  const about = heard ? ` The radio conversation just said: "${heard}".` : '';
+  return `${base}.${about} Trippy psychedelic dreamlike cinematic wallpaper, `
+    + 'rich deep colors on a dark background, no text, no words, no letters, no captions.';
+}
+
+function setGenStatus(msg) {
+  document.getElementById('genBadge').textContent = msg;
+}
+
+function coverCrop(img, w, h) {
+  const c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  const cc = c.getContext('2d');
+  const s = Math.max(w / img.width, h / img.height);
+  cc.drawImage(img, (w - img.width * s) / 2, (h - img.height * s) / 2,
+    img.width * s, img.height * s);
+  return c;
+}
+
+function loadDream(dataUrl) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      const unit = GEN.front === 0 ? 1 : 0;
+      gl.activeTexture(gl.TEXTURE0 + unit);
+      gl.bindTexture(gl.TEXTURE_2D, dreamTex[unit]);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE,
+        coverCrop(img, 1280, 720));
+      GEN.front = unit;
+      GEN.mixTarget = unit;      // 0 shows img0, 1 shows img1
+      GEN.hasImage = true;
+      GEN.lastDataUrl = dataUrl; // continuity: next dream evolves from this one
+      resolve();
+    };
+    img.onerror = () => reject(new Error('bad image data'));
+    img.src = dataUrl;
+  });
+}
+
+function fireDream() {
+  const theme = state.currentTarget || 'nye';
+  GEN.busy = true;
+  setGenStatus('dreaming a new vision…');
+  const mood = (BRAIN.data && state.time < BRAIN.until) ? BRAIN.data.label : THEMES[theme].label;
+  fetch(GEN.base + '/generate', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      prompt: buildDreamPrompt(theme),
+      mood,
+      reference: (SETTINGS.continuity && GEN.lastDataUrl) || undefined
+    })
+  })
+    .then(r => r.json())
+    .then(j => {
+      if (!j.image) throw new Error(j.error || 'no image');
+      return loadDream(j.image);
+    })
+    .then(() => {
+      GEN.lastGen = state.time;
+      GEN.count += 1;
+      setGenStatus(`vision ${GEN.count} · ~$${(GEN.count * GEN.costPer).toFixed(2)} this session`);
+    })
+    .catch(e => {
+      setGenStatus('dream failed, retrying soon (' + e.message + ')');
+      GEN.lastGen = state.time - SETTINGS.cadence + 30;
+    })
+    .finally(() => { GEN.busy = false; });
+}
+
+function updateGen(dt) {
+  GEN.amtTarget = (GEN.on && GEN.hasImage) ? SETTINGS.dreamOpacity : 0;
+  GEN.amt += (GEN.amtTarget - GEN.amt) * Math.min(1, dt * 0.4);
+  GEN.mix += (GEN.mixTarget - GEN.mix) * Math.min(1, dt / 5);
+  if (!state.running || !GEN.on || !GEN.serverOk || GEN.busy) return;
+  if (GEN.count >= SETTINGS.cap) return;
+  const since = state.time - GEN.lastGen;
+  const themeSwitched = state.themeChangedAt && (state.time - state.themeChangedAt) < 4;
+  if (since > SETTINGS.cadence || (themeSwitched && since > 25)) fireDream();
+}
+
+function checkDreamServer() {
+  fetch(GEN.base + '/health')
+    .then(r => r.json())
+    .then(j => {
+      GEN.serverOk = !!(j.ok && j.genai);
+      setGenStatus(GEN.serverOk ? '' : 'dream server has no API key - shader-only mode');
+    })
+    .catch(() => {
+      GEN.serverOk = false;
+      setGenStatus('no dream server - shader-only mode (run server.py for AI visions)');
+    });
+}
+
+/* ============================================================
+   TOPIC BRAIN - LLM reads the transcript, designs the mood
+   ============================================================ */
+const BRAIN = {
+  interval: 45, ttl: 120,
+  last: -999, busy: false, seenChars: 0,
+  data: null, until: 0
+};
+
+function updateBrain() {
+  if (!state.running || !GEN.serverOk || BRAIN.busy) return;
+  if (state.time - BRAIN.last < BRAIN.interval) return;
+  const transcript = GEN.transcript.join(' ');
+  if (!transcript || transcript.length === BRAIN.seenChars) return; // nothing new heard
+  BRAIN.busy = true;
+  BRAIN.seenChars = transcript.length;
+  fetch(GEN.base + '/interpret', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ transcript })
+  })
+    .then(r => r.json())
+    .then(j => {
+      if (j.error) throw new Error(j.error);
+      BRAIN.data = j;
+      BRAIN.until = state.time + BRAIN.ttl;
+      BRAIN.last = state.time;
+      if (j.theme && j.theme !== 'nye') state.scores[j.theme] += 1.2; // nudge the twitch layer
+      document.getElementById('hudBrain').textContent = j.label ? '☽ ' + j.label : '';
+    })
+    .catch(() => { BRAIN.last = state.time - BRAIN.interval + 20; }) // retry in ~20s
+    .finally(() => { BRAIN.busy = false; });
+}
+
+// 0..1 while the brain's reading is fresh, fading out over its last 20s
+function brainWeight() {
+  if (!BRAIN.data || !BRAIN.data.palette || state.forcedTheme) return 0;
+  return 0.55 * Math.max(0, Math.min(1, (BRAIN.until - state.time) / 20));
+}
+
+/* ============================================================
+   BUTTERCHURN - the MilkDrop 2 engine as a blendable layer
+   ============================================================ */
+const CHURN = { viz: null, presets: null, names: [], idx: 0, opacity: 0, canvas: null };
+
+function initChurn(sourceNode) {
+  if (!window.butterchurn || !window.butterchurnPresets || !audioCtx) return;
+  try {
+    const c = document.getElementById('bc');
+    c.width = Math.floor(W / 2); c.height = Math.floor(H / 2); // half-res is plenty
+    const bc = window.butterchurn.default || window.butterchurn;
+    CHURN.viz = bc.createVisualizer(audioCtx, c, {
+      width: c.width, height: c.height, pixelRatio: 1
+    });
+    CHURN.viz.connectAudio(sourceNode);
+    const presetLib = window.butterchurnPresets.default || window.butterchurnPresets;
+    CHURN.presets = presetLib.getPresets();
+    CHURN.names = Object.keys(CHURN.presets);
+    CHURN.canvas = c;
+    CHURN.idx = Math.floor(Math.random() * CHURN.names.length);
+    CHURN.viz.loadPreset(CHURN.presets[CHURN.names[CHURN.idx]], 0);
+  } catch (e) {
+    CHURN.viz = null; // vendored files missing or WebGL2 unavailable: skip silently
+  }
+}
+
+// no mic (demo mode): feed butterchurn two drifting oscillators so it still dances
+function initChurnDemo() {
+  try {
+    audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+    const mixer = audioCtx.createGain();
+    mixer.gain.value = 0.4;
+    for (const freq of [70, 220]) {
+      const osc = audioCtx.createOscillator();
+      osc.frequency.value = freq;
+      const g = audioCtx.createGain();
+      const lfo = audioCtx.createOscillator();
+      lfo.frequency.value = freq === 70 ? 1.1 : 0.4;
+      const lfoGain = audioCtx.createGain();
+      lfoGain.gain.value = 0.5;
+      lfo.connect(lfoGain); lfoGain.connect(g.gain);
+      osc.connect(g); g.connect(mixer);
+      osc.start(); lfo.start();
+    }
+    initChurn(mixer); // never connected to destination: silent, analysis-only
+  } catch (e) { /* no audio at all: fine */ }
+}
+
+function nextChurnPreset(blendSeconds) {
+  if (!CHURN.viz) return;
+  CHURN.idx = (CHURN.idx + 1 + Math.floor(Math.random() * 5)) % CHURN.names.length;
+  CHURN.viz.loadPreset(CHURN.presets[CHURN.names[CHURN.idx]], blendSeconds);
+}
+
+function updateChurn(dt) {
+  if (!CHURN.viz) return;
+  // self-heal size: init can happen while the window reports 0x0, and resizes happen
+  const wantW = Math.max(2, Math.floor(W / 2)), wantH = Math.max(2, Math.floor(H / 2));
+  if (CHURN.canvas.width !== wantW || CHURN.canvas.height !== wantH) {
+    CHURN.canvas.width = wantW; CHURN.canvas.height = wantH;
+    CHURN.viz.setRendererSize(wantW, wantH);
+  }
+  const target = state.running
+    ? SETTINGS.churn * (state.musicMode ? 1.0 : 0.35)
+    : 0;
+  CHURN.opacity += (target - CHURN.opacity) * Math.min(1, dt * 0.8);
+  CHURN.canvas.style.opacity = CHURN.opacity.toFixed(3);
+  if (CHURN.opacity > 0.02) CHURN.viz.render();
+}
+
+/* --- theme-flavored particle burst on each beat --- */
+const BURSTS = {
+  nye() { spawn('ripple', { x: W / 2, y: H * 0.86, r: 10, ttl: 2.5 }); },
+  aliens() {
+    for (let i = 0; i < 3; i++) spawn('blip', { x: rnd(W * 0.2, W * 0.8), y: rnd(H * 0.2, H * 0.7), ttl: 0.8 });
+  },
+  demons() {
+    for (let i = 0; i < 7; i++) spawn('ember', { x: rnd(0, W), y: H + 10, s: rnd(0.8, 2.0), ttl: rnd(2, 5) });
+  },
+  ghosts() {
+    for (let i = 0; i < 2; i++) spawn('orb', { x: rnd(0, W), y: rnd(H * 0.3, H * 0.9), s: rnd(0.5, 1.3), ttl: rnd(3, 6) });
+  },
+  gov() { spawn('blip', { x: rnd(W * 0.1, W * 0.9), y: rnd(H * 0.1, H * 0.9), ttl: 1.0 }); },
+  cryptids() {
+    for (let i = 0; i < 4; i++) spawn('orb', { x: rnd(0, W), y: rnd(H * 0.4, H), s: rnd(0.15, 0.4), ttl: rnd(2, 4) });
+  },
+  time() {
+    for (let i = 0; i < 10; i++) spawn('streak', { ang: rnd(0, Math.PI * 2), d: rnd(10, 60), ttl: rnd(1.5, 3) });
+  }
+};
+
+/* ============================================================
+   THEME BLENDING
+   ============================================================ */
+function currentTarget() {
+  if (state.forcedTheme) return state.forcedTheme;
+  let best = 'nye', bestScore = SCORE_THRESHOLD;
+  for (const k of THEME_ORDER) {
+    if (k !== 'nye' && state.scores[k] > bestScore) { best = k; bestScore = state.scores[k]; }
+  }
+  return best;
+}
+
+const blended = { colA: [0, 0, 0], colB: [0, 0, 0], colC: [0, 0, 0], flow: [0, 0],
+  warp: 0, zoom: 0, stars: 0, scan: 0, tunnel: 0, ember: 0 };
+
+function updateThemes(dt) {
+  const decay = Math.pow(0.5, dt / SCORE_HALF_LIFE);
+  for (const k of THEME_ORDER) state.scores[k] *= decay;
+
+  const target = currentTarget();
+  if (target !== state.currentTarget) {
+    state.currentTarget = target;
+    state.themeChangedAt = state.time;
+    nextChurnPreset(5.7); // milkdrop morphs with the mood
+  }
+  const k = 1 - Math.exp(-dt / BLEND_TAU);
+  let total = 0;
+  for (const name of THEME_ORDER) {
+    state.weights[name] += ((name === target ? 1 : 0) - state.weights[name]) * k;
+    total += state.weights[name];
+  }
+  // normalize + blend params
+  for (const key of ['warp', 'zoom', 'stars', 'scan', 'tunnel', 'ember']) blended[key] = 0;
+  blended.colA.fill(0); blended.colB.fill(0); blended.colC.fill(0); blended.flow.fill(0);
+  for (const name of THEME_ORDER) {
+    const w = state.weights[name] / total;
+    const th = THEMES[name];
+    for (let i = 0; i < 3; i++) {
+      blended.colA[i] += th.colA[i] * w;
+      blended.colB[i] += th.colB[i] * w;
+      blended.colC[i] += th.colC[i] * w;
+    }
+    blended.flow[0] += th.flow[0] * w; blended.flow[1] += th.flow[1] * w;
+    blended.warp += th.warp * w; blended.zoom += th.zoom * w;
+    blended.stars += th.stars * w; blended.scan += th.scan * w;
+    blended.tunnel += th.tunnel * w; blended.ember += th.ember * w;
+  }
+
+  // the brain's custom palette bleeds over the theme colors while fresh
+  const bw = brainWeight();
+  if (bw > 0.01) {
+    const pal = BRAIN.data.palette;
+    for (let i = 0; i < 3; i++) {
+      blended.colA[i] += (pal[0][i] - blended.colA[i]) * bw;
+      blended.colB[i] += (pal[1][i] - blended.colB[i]) * bw;
+      blended.colC[i] += (pal[2][i] - blended.colC[i]) * bw;
+    }
+  }
+
+  const hudTheme = document.getElementById('hudTheme');
+  const label = THEMES[target].label + (state.forcedTheme ? ' (pinned)' : '');
+  if (hudTheme.textContent !== label) hudTheme.textContent = label;
+}
+
+/* ============================================================
+   MAIN LOOP
+   ============================================================ */
+let flowAcc = [0, 0]; // integrated flow so changing flow direction doesn't jump
+let lastT = 0;
+
+function frame(tms) {
+  requestAnimationFrame(frame);
+  const t = tms / 1000;
+  const dt = Math.min(0.05, lastT ? t - lastT : 0.016);
+  lastT = t;
+  state.time = t;
+
+  updateAudio(dt);
+  updateThemes(dt);
+  updateGen(dt);
+  updateBrain();
+  updateChurn(dt);
+
+  // integrate flow (shader gets a stable accumulated offset via u_time trick:
+  // we pass flow as velocity but fold accumulated drift into it)
+  flowAcc[0] += blended.flow[0] * dt;
+  flowAcc[1] += blended.flow[1] * dt;
+
+  // --- GL layer ---
+  gl.uniform2f(U.u_res, glCanvas.width, glCanvas.height);
+  gl.uniform1f(U.u_time, t);
+  gl.uniform1f(U.u_bass, state.bass);
+  gl.uniform1f(U.u_mid, state.mid);
+  gl.uniform1f(U.u_treble, state.treble);
+  gl.uniform1f(U.u_rms, state.rms);
+  gl.uniform3fv(U.u_colA, blended.colA);
+  gl.uniform3fv(U.u_colB, blended.colB);
+  gl.uniform3fv(U.u_colC, blended.colC);
+  gl.uniform1f(U.u_warp, blended.warp);
+  gl.uniform1f(U.u_zoom, blended.zoom);
+  gl.uniform1f(U.u_stars, blended.stars);
+  gl.uniform1f(U.u_scan, blended.scan);
+  gl.uniform1f(U.u_tunnel, blended.tunnel);
+  gl.uniform1f(U.u_ember, blended.ember);
+  gl.uniform2f(U.u_flow, t > 0 ? flowAcc[0] / t : 0, t > 0 ? flowAcc[1] / t : 0);
+  gl.uniform1f(U.u_imgMix, GEN.mix);
+  gl.uniform1f(U.u_imgAmt, GEN.amt);
+  gl.uniform1f(U.u_beat, state.beat);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+
+  // --- 2D layer ---
+  ctx.clearRect(0, 0, W, H);
+  if (state.running) {
+    for (const name of THEME_ORDER) {
+      const w = state.weights[name];
+      if (w > 0.03) SPAWNERS[name](w, dt);
+    }
+    if (state.beatFired) {
+      state.beatFired = false;
+      BURSTS[state.currentTarget || 'nye']();
+    }
+  }
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    BEHAVIOR[p.type].update(p, dt);
+    if (p.life <= 0) { particles.splice(i, 1); continue; }
+    BEHAVIOR[p.type].draw(p);
+  }
+  if (particles.length > 900) particles.splice(0, particles.length - 900);
+
+  // live spectrum overlay (S) - raw FFT bins, straight off the mic
+  if (state.showSpectrum) {
+    const sw = 320, sh = 90, sx = W - sw - 22, sy = H - sh - 20;
+    ctx.fillStyle = 'rgba(0,0,0,0.45)';
+    ctx.fillRect(sx - 10, sy - 26, sw + 20, sh + 36);
+    if (analyser && !state.demoMode) {
+      const bars = 96, usable = Math.floor(freqData.length * 0.55);
+      for (let i = 0; i < bars; i++) {
+        const v = freqData[Math.floor(i * usable / bars)] / 255;
+        ctx.fillStyle = `rgba(232,201,136,${(0.25 + v * 0.75).toFixed(3)})`;
+        ctx.fillRect(sx + i * (sw / bars), sy + sh - v * sh, sw / bars - 1, v * sh);
+      }
+    } else {
+      ctx.fillStyle = 'rgba(220,215,235,0.6)';
+      ctx.font = '12px Georgia, serif'; ctx.textAlign = 'center';
+      ctx.fillText('no mic - demo mode', sx + sw / 2, sy + sh / 2);
+    }
+    ctx.font = '11px Georgia, serif'; ctx.textAlign = 'left';
+    const lv = (n, v) => `${n} ${'▇'.repeat(Math.round(v * 8)).padEnd(8, '▁')}`;
+    ctx.fillStyle = 'rgba(232,201,136,0.85)';
+    ctx.fillText(`${lv('bass', state.bass)}   ${lv('mid', state.mid)}   ${lv('treble', state.treble)}`, sx, sy - 10);
+  }
+
+  // HUD meter + beat dot + music badge
+  document.getElementById('meterFill').style.width = Math.round(state.rms * 100) + '%';
+  document.getElementById('beatDot').style.opacity = state.beat.toFixed(2);
+  document.getElementById('hudMusic').style.display = state.musicMode ? 'block' : 'none';
+}
+requestAnimationFrame(frame);
+
+/* ============================================================
+   UI - splash, keys, idle hiding
+   ============================================================ */
+document.getElementById('tune').addEventListener('click', async () => {
+  document.getElementById('splash').classList.add('gone');
+  document.getElementById('hud').style.opacity = '';
+  state.running = true;
+  checkDreamServer();
+  try {
+    await initAudio();
+    initSpeech();
+    initChurn(micSource);
+  } catch (e) {
+    state.demoMode = true;
+    state.srStatus = 'mic unavailable - drifting on its own (keys 1–7 set the mood)';
+    autoDrift();
+    initChurnDemo();
+  }
+  document.getElementById('srBadge').textContent = state.srStatus;
+});
+
+// with no mic/speech, wander through the moods slowly on its own
+function autoDrift() {
+  setInterval(() => {
+    if (state.forcedTheme) return;
+    const pick = THEME_ORDER[Math.floor(Math.random() * THEME_ORDER.length)];
+    for (const k of THEME_ORDER) state.scores[k] = 0;
+    if (pick !== 'nye') state.scores[pick] = 3;
+  }, 50000);
+}
+
+window.addEventListener('keydown', (e) => {
+  if (e.key === 'f' || e.key === 'F') {
+    document.fullscreenElement
+      ? document.exitFullscreen()
+      : document.documentElement.requestFullscreen().catch(() => {});
+  } else if (e.key >= '1' && e.key <= '7') {
+    state.forcedTheme = THEME_ORDER[Number(e.key) - 1];
+  } else if (e.key === '0') {
+    state.forcedTheme = null;
+  } else if (e.key === 's' || e.key === 'S') {
+    state.showSpectrum = !state.showSpectrum;
+  } else if (e.key === 'g' || e.key === 'G') {
+    GEN.on = !GEN.on;
+    setGenStatus(GEN.on ? (GEN.serverOk ? '' : 'no dream server - run server.py') : 'dream layer off (G to wake it)');
+  } else if (e.key === 'b' || e.key === 'B') {
+    if (SETTINGS.churn < 0.05) { SETTINGS.churn = 0.4; saveSettings(); refreshSettingsUI(); }
+    nextChurnPreset(2.7);
+  } else if (e.key === 'c' || e.key === 'C') {
+    document.getElementById('settings').classList.toggle('open');
+  }
+});
+
+/* --- settings drawer wiring --- */
+const $s = (id) => document.getElementById(id);
+function refreshSettingsUI() {
+  $s('sCadence').value = SETTINGS.cadence;
+  $s('vCadence').textContent = SETTINGS.cadence + 's';
+  $s('sDream').value = Math.round(SETTINGS.dreamOpacity * 100);
+  $s('vDream').textContent = Math.round(SETTINGS.dreamOpacity * 100) + '%';
+  $s('sReact').value = Math.round(SETTINGS.reactivity * 100);
+  $s('vReact').textContent = Math.round(SETTINGS.reactivity * 100) + '%';
+  $s('sChurn').value = Math.round(SETTINGS.churn * 100);
+  $s('vChurn').textContent = Math.round(SETTINGS.churn * 100) + '%';
+  $s('sCap').value = SETTINGS.cap;
+  $s('vCap').textContent = `${SETTINGS.cap} (~$${(SETTINGS.cap * GEN.costPer).toFixed(2)})`;
+  $s('sContinuity').checked = SETTINGS.continuity;
+}
+$s('sCadence').addEventListener('input', e => { SETTINGS.cadence = +e.target.value; saveSettings(); refreshSettingsUI(); });
+$s('sDream').addEventListener('input', e => { SETTINGS.dreamOpacity = +e.target.value / 100; saveSettings(); refreshSettingsUI(); });
+$s('sReact').addEventListener('input', e => { SETTINGS.reactivity = +e.target.value / 100; saveSettings(); refreshSettingsUI(); });
+$s('sChurn').addEventListener('input', e => { SETTINGS.churn = +e.target.value / 100; saveSettings(); refreshSettingsUI(); });
+$s('sCap').addEventListener('input', e => { SETTINGS.cap = +e.target.value; saveSettings(); refreshSettingsUI(); });
+$s('sContinuity').addEventListener('change', e => { SETTINGS.continuity = e.target.checked; saveSettings(); });
+refreshSettingsUI();
+
+let idleTimer = null;
+function wake() {
+  document.body.classList.remove('idle');
+  clearTimeout(idleTimer);
+  idleTimer = setTimeout(() => document.body.classList.add('idle'), 3000);
+}
+window.addEventListener('mousemove', wake);
+window.addEventListener('mousedown', wake);
+wake();
+
+// debug handle (console tinkering: __abv.state.forcedTheme = 'demons', etc.)
+window.__abv = { state, particles, hearTranscript, GEN, fireDream, BRAIN, CHURN, SETTINGS, FLUX };
+</script>
+</body>
+</html>
