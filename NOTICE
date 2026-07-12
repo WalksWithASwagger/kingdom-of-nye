@@ -1,0 +1,10 @@
+The Kingdom of Nye
+Copyright (c) 2026 Kris Krüg
+Licensed under the MIT License (see LICENSE).
+
+This project bundles the following third-party software:
+
+Butterchurn (butterchurn.min.js, butterchurn-presets.min.js)
+  A WebGL implementation of the MilkDrop visualizer.
+  Copyright (c) Jordan Berg and contributors.
+  MIT License. https://github.com/jberg/butterchurn
