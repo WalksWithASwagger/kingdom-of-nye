@@ -1,117 +1,99 @@
-# The Kingdom of Nye - Spec, Features, and Roadmap
+# The Kingdom of Nye — Spec, Features, and Roadmap
 
 ## Vision
 
 A living, listening backdrop for late-night Art Bell sessions. Not a screensaver:
-it hears the room, feels the audio, understands what the show is talking about,
-and dreams imagery to match - all from one local page plus one small local
-server, with honest cost controls. It should feel like the radio broadcast is
-bleeding into the walls.
+it hears the room, feels the audio, understands what the show is talking about, and
+dreams imagery to match — all locally, on your own GPU. It should feel like the
+broadcast is bleeding into the walls, and like the dream is *one continuous thing*
+gathering and dissolving with the conversation, never cutting.
 
-## Architecture
+## Architecture (v3)
 
 ```
-mic ──► WebAudio FFT ──► shader uniforms (bass/mid/treble/rms/beat)
- │
- ├──► Chrome Web Speech ──► keyword engine (instant twitch, 7 moods)
- │                     └──► rolling transcript ──► /interpret (LLM brain)
- │                                                    │
- ▼                                                    ▼
-index.html (WebGL nebula + Butterchurn + 2D sprites) ◄── palette/scene/label
- │
- └──► /generate (topic + transcript + previous vision) ──► Gemini image
-                    │
-                    └──► visions/YYYY-MM-DD/ (auto-saved gallery)
+room audio ─┬─► browser  WebAudio FFT ─► bands + spectral-flux beats ─► shader uniforms
+            │                          └─► keyword scorer (7 moods, 45s decay)
+            └─► conductor  faster-whisper (local STT) ─► words
+
+                    ┌──────────────── conductor (Python / aiohttp / asyncio) ────────────────┐
+  browser  ◄──WS───►│  words + Gemini /interpret mood ─► slow-emergence control law           │
+  (WebGL composite) │       │                              (blend · denoise · seed clock)      │
+       ▲    ▲       │       ├─► ComfyUI img2img feedback loop ─► frames ─► (proxied to browser)│
+       │    │       │       └─► AutoLume OSC co-drive (optional; shares the clock)             │
+       │    └─ window-capture ◄── AutoLume Perform (StyleGAN substrate video)                  │
+       └───────────────────────────────────────────────────────────────────────────────────── ┘
 ```
 
-- **index.html** - self-contained page: WebGL domain-warped nebula shader,
-  Butterchurn (MilkDrop 2) layer, 2D sprite/caption overlay, speech recognition,
-  audio analysis, settings drawer. Works standalone (file://) in degraded mode.
-- **server.py** - zero-dependency stdlib server: serves the page, proxies Gemini
-  (key never reaches the browser), saves the vision gallery. Key lookup:
-  `$GEMINI_API_KEY` / `$GOOGLE_API_KEY` / `~/Code/rafiki/.env`.
+- **index.html** — one self-contained page: the WebGL composite (procedural nebula as a
+  shared warp field + ComfyUI apparition + AutoLume substrate, fused with soft-light,
+  grain, chromatic aberration, palette tint), the audio-feature engine, the keyword
+  scorer, the 2D sprite overlay, the console. Talks to the conductor over one WebSocket.
+- **conductor/** — the local brain (Python, aiohttp, one asyncio loop):
+  - `app.py` — static serving, `/health`, `/interpret`, the `/ws` control plane, task supervision
+  - `asr.py` — faster-whisper mic tap → word deltas (with a silence-hallucination filter)
+  - `brain.py` — Gemini `/interpret` mood readings (label, theme, scene, palette, intensity)
+  - `control.py` — the slow-emergence control law (the signature mechanic)
+  - `comfy.py` — the ComfyUI img2img feedback loop + frame proxy + black-frame guard
+  - `autolume_osc.py` — AutoLume OSC co-drive (opt-in)
+  - `bus.py` — shared control state + WebSocket fan-out
+- **server.py** — a thin launch shim that re-execs into the project venv and starts the conductor.
 
-## v1 (shipped) - feature inventory
+## v3 (this build) — the two-engine local rewrite
 
-- Audio-reactive WebGL nebula: FFT bands drive pulse, twinkle, warp; slow AGC
-  keeps quiet late-night volume alive; fast-attack/slow-release smoothing.
-- 7 themed moods with smooth ~8 s crossfade morphs (blended shader params):
-  Kingdom of Nye, Visitors, The Adversary, Restless Spirits, Shadow Government,
-  Something in the Woods, Down the Wormhole. Per-theme particle systems
-  (saucers + beams, embers + sigils, orbs + wisps, redaction bars + radar,
-  eyes in the woods, warp streaks, radio ripples).
-- Topic detection: continuous Chrome speech recognition, ~140 keyword/phrase
-  triggers, score decay (45 s half-life) so moods follow the conversation.
-- Heard trigger words drift across the screen as ghostly captions.
-- Generative dream layer: Gemini `gemini-2.5-flash-image` visions of what the
-  show is discussing, melted into the shader (domain-warped by bass, slow Ken
-  Burns, ping-pong crossfade between last two visions).
-- Cost control: topic-change-triggered generation (25 s debounce) + 4 min
-  ambient refresh, ~$0.04/image, ~$0.30-0.60/evening, 80-image hard cap,
-  live HUD cost ticker.
-- Keys: F fullscreen, 1-7 pin mood, 0 auto, G dream layer, S spectrum overlay.
-- Graceful degradation: no server -> shader-only; no mic -> demo auto-drift.
+The whole *pixel* layer was rebuilt; the audio + speech + topic nervous system was kept.
 
-## v2 (this build)
+1. **Fully local, open-source dreaming** — cloud Gemini image generation and the
+   MilkDrop/Butterchurn layer are gone. ComfyUI (DreamShaper 8 + LCM, img2img feedback)
+   generates on your GPU; the only remaining cloud call is the pennies-a-night topic brain.
+2. **Local Whisper STT** — faster-whisper replaces Google's Web Speech API (also frees it
+   from the Chrome lock-in). Runs offline on CPU; phrase-chunked with a silence-hallucination filter.
+3. **The slow-emergence control law** (`control.py`) — words seed a *target*; the visual
+   eases toward it over ~30 s. A denoise envelope makes apparitions **gather → settle →
+   dissolve**; a shared ~8 s seed clock and topic-ease timing move both engines as one
+   organism; bass/beat/bumper-music modulate denoise, seed drift, and substrate energy.
+4. **ComfyUI feedback loop** (`comfy.py`) — strictly-sequential img2img at low denoise so
+   the image morphs instead of regenerating. A denoise floor plus a periodic clean-repaint
+   keep the loop from diverging into grid/plaid on MPS; `--fp32-vae` + a black-frame guard
+   prevent NaN poisoning. Frames arrive over the ComfyUI websocket and are proxied to the browser.
+5. **AutoLume substrate** — the StyleGAN Perform output is captured into the composite via
+   the browser (`V` / window-capture); OSC co-drive (`NYE_AUTOLUME=1`) steers diversity,
+   noise, seed, and preset on the same clock as the apparition.
+6. **New composite shader** — the procedural nebula is demoted to a shared warp field; the
+   substrate and apparition are combined soft-light with a single shared post-pass (grain,
+   chromatic aberration, vignette, brain-palette tint) so both read as one film stock.
+7. **Interface** — a broadcast-console HUD (ON AIR indicator, mood label, signal meter,
+   bumper-music badge, whispered transcript), a redesigned splash, and a v3 console
+   (`C`: dream presence, substrate presence, reactivity). Own `nye3-settings` namespace.
 
-1. **LLM topic brain** - `/interpret`: every ~45 s the rolling transcript goes to
-   `gemini-2.5-flash-lite` (JSON mode) which returns a mood label, an optional
-   base-theme anchor, a custom scene prompt, a 3-color palette, and intensity.
-   The visuals can now follow ANY topic - shadow people, near-death experiences,
-   numbers stations - not just the 7 hardcoded moods. Keyword engine remains as
-   the instant-reaction layer between brain ticks. Cost: pennies/night.
-2. **Beat detection** - spectral-flux onset detection over the existing FFT
-   (rolling mean+std threshold, refractory period). Beats kick the shader
-   (`u_beat`: zoom punch, brightness, star flare) and fire particle bursts.
-3. **Bumper-music mode** - sustained periodic beats flip `musicMode`:
-   reactivity cranks up and the Butterchurn layer surges. Art's bumper music
-   becomes the peak of the trip.
-4. **Butterchurn (MilkDrop 2) layer** - the legendary Winamp visualizer engine,
-   vendored (~1 MB static JS), fed by the same mic audio graph, blended between
-   nebula and sprites. Presets rotate on mood change; `B` cycles; opacity rides
-   music mode + settings. Skipped gracefully if the vendored files are absent.
-5. **Dream continuity** - each generation sends the previous vision as a Gemini
-   reference image, so the night becomes one continuously evolving hallucination
-   instead of disconnected slides.
-6. **Vision gallery** - every dream auto-saved to `visions/YYYY-MM-DD/` with a
-   JSON sidecar (prompt, mood, time). Wake up to the night's trip log.
-7. **Settings drawer** (`C`) - dream cadence, dream opacity, reactivity,
-   session cap, Butterchurn blend, continuity toggle; persisted in localStorage.
-8. **HUD upgrades** - beat dot, music-mode badge, brain mood label.
+Kept from before: the FFT band engine with slow AGC and attack/release smoothing;
+spectral-flux beat detection + bumper-music hysteresis; the ~140-word keyword scorer with
+45 s score decay and 7 themed moods; per-theme particle bursts; the topic-brain palette fade.
 
-## Cost model
+## Performance (Apple Silicon / MPS)
 
-| Thing | Cost |
-|-------|------|
-| Topic brain (`flash-lite`, ~1 call/45 s) | ~$0.01-0.03 / night |
-| Visions (`flash-image`, topic-triggered) | ~$0.04 each, ~$0.30-0.60 / night |
-| Hard cap | 80 images (~$3.12), adjustable in settings |
-| Butterchurn, beats, shader | free, local |
+Realistic on an M-series GPU: ~0.4–0.5 dream-fps (2–2.5 s per 512² frame, 6-step LCM). The
+browser crossfades between frames and keeps the composite alive at 60 fps, so it reads as a
+continuous drift. True video-rate diffusion (StreamDiffusion / TensorRT) is CUDA-only and
+deliberately out of scope — the aesthetic is slow emergence, not motion.
 
-## v3+ roadmap
+## Roadmap
 
-- **Live Dream mode** - fal.ai realtime SDXL/LCM img2img (~$0.002/image over a
-  websocket): continuous ~0.2-1 fps morphing of the current frame. A living
-  painting. ~$1-4/hr, needs a fal.ai account; off by default.
-- **Local Whisper transcription** - mlx-whisper on Apple Silicon replaces Web
-  Speech: better accuracy on AM-radio audio, works offline, no Chrome dependency.
-- **Depth parallax** - run each vision through a depth model, displace in the
-  shader for 2.5D camera drift inside the dream.
-- **Veo video dreams** - short generated video loops per mood. Flagged: video
-  generation runs ~$0.40+/second; strictly opt-in.
-- **Vision gallery browser** - a `/gallery` page: browse past nights, prompts,
-  and moods; export a "trip report".
-- **WebGPU port** - compute-shader particles and higher-res noise once WebGPU
-  is worth the migration.
-- **Projector/multi-display mode** - control HUD on the laptop, clean output on
-  the TV/projector via a second window.
-- **Séance rooms** - WebRTC sync so a remote friend sees the same trip while
-  you listen together on a call.
+- **Confirmed AutoLume OSC address map** — read the literal addresses off a running Perform
+  and lock `autolume_osc.py` to them; add GANSpace feature-direction steering by mood.
+- **BlackHole loopback option** — feed both Whisper and the browser from a clean loopback of
+  the show audio instead of the room mic.
+- **Vision gallery** — auto-save the night's frames + prompts to `visions/YYYY-MM-DD/` and a
+  `/gallery` browser to relive the trip.
+- **Depth parallax** — run each apparition through a depth model, displace in the shader for
+  2.5D drift inside the dream.
+- **CUDA realtime path** — optional ComfyStream/WebRTC transport for true 20–30 fps when an
+  NVIDIA GPU is present (local or over NDI).
+- **Projector/multi-display mode** — control HUD on the laptop, clean output on the TV.
 
 ## Development invariants
 
-- The page must always work standalone (file://) with no server: shader,
-  keywords, particles, spectrum. Every network feature degrades gracefully.
-- The API key never reaches the browser or the repo.
-- Every recurring cost is visible in the HUD and capped by default.
-- One page, one server file, vendored static JS only - no build step, ever.
+- The audio + keyword + topic layer is backend-agnostic and stays that way.
+- The Gemini key never reaches the browser or the repo.
+- The conductor degrades gracefully: a missing subsystem (ComfyUI down, no AutoLume, no mic)
+  is logged and skipped, never fatal. The composite falls back to the procedural base.
+- One page, one conductor package, no build step.

@@ -2,9 +2,11 @@ The Kingdom of Nye
 Copyright (c) 2026 Kris Krüg
 Licensed under the MIT License (see LICENSE).
 
-This project bundles the following third-party software:
+As of v3 this project bundles no third-party source. It builds on the following
+external tools, installed separately and each under its own license:
 
-Butterchurn (butterchurn.min.js, butterchurn-presets.min.js)
-  A WebGL implementation of the MilkDrop visualizer.
-  Copyright (c) Jordan Berg and contributors.
-  MIT License. https://github.com/jberg/butterchurn
+  ComfyUI                — https://github.com/comfyanonymous/ComfyUI (GPL-3.0)
+  comfyui-tooling-nodes  — https://github.com/Acly/comfyui-tooling-nodes (MIT)
+  faster-whisper         — https://github.com/SYSTRAN/faster-whisper (MIT)
+  AutoLume               — https://www.metacreation.net/autolume (Metacreation Lab, SFU)
+  DreamShaper 8 (model)  — https://huggingface.co/Lykon/DreamShaper (CreativeML OpenRAIL-M)

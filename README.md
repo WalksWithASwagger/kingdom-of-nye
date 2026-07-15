@@ -1,95 +1,143 @@
-# The Kingdom of Nye - Art Bell Visualizer
+# The Kingdom of Nye — v3
 
-An audio-reactive, **topic-reactive**, **AI-generative** trippy visualizer for
-late-night Art Bell listening. It listens to the room through the mic: the
-visuals pulse with the audio and kick on every beat, speech recognition plus an
-LLM "topic brain" understand what the show is talking about, a Gemini dream
-layer paints visions of it into the shader, and the real MilkDrop 2 engine
-(Butterchurn) surges up whenever the bumper music hits.
+A local, open-source, **audio- and speech-reactive** visualizer for late-night
+[Art Bell](https://en.wikipedia.org/wiki/Art_Bell) / Coast to Coast AM sessions. It
+listens to the room, understands what the show is about, and paints a slow, evolving
+hallucination to match — entirely on your own machine, no cloud image models.
 
-Full details: [SPEC.md](./SPEC.md) (features, architecture, cost model, roadmap).
+Two minds dreaming together on one film stock:
 
-## Quick start
+- **ComfyUI** is the **apparition engine** — a Stable Diffusion img2img *feedback loop*.
+  The spoken words never cut to a literal picture; they seed a drift. Art says "shadow
+  people at the foot of the bed" and over ~30 seconds the visual field *gathers* toward
+  it, holds, and dissolves. Evocative, not illustrative.
+- **AutoLume** (optional) is the **subconscious substrate** — a continuously morphing
+  StyleGAN latent field, steered live over OSC and folded in underneath the apparitions.
+- A single WebGL **composite** fuses them — shared warp field, soft-light blend, one film
+  grain, chromatic aberration on the bass — so it reads as *one* dream, not stacked layers.
 
-**No install, no build, no dependencies.** You need Python 3 (for the AI
-companion server) and Chrome.
+The old MilkDrop/Y2K look is gone. Your GPU does the dreaming.
 
-The lightweight version (audio + topic reactivity + MilkDrop, no AI images):
-just open `index.html` in Chrome directly. Done.
+## What you need
 
-The full experience (adds the Gemini dream layer + LLM topic brain):
+- **Apple Silicon Mac** (built and tuned on an M4 Max; any recent M-series works) or a
+  CUDA box. Metal/MPS is fine — this is designed around a "slow and gorgeous", not
+  video-rate, generation loop.
+- **[ComfyUI](https://github.com/comfyanonymous/ComfyUI)** running locally, with:
+  - a checkpoint — default is **DreamShaper 8 (LCM baked in)**, `DreamShaper8_LCM.safetensors`
+    from [Lykon/DreamShaper](https://huggingface.co/Lykon/DreamShaper) → `models/checkpoints/`
+  - the **[comfyui-tooling-nodes](https://github.com/Acly/comfyui-tooling-nodes)** custom node
+    (base64 image in / websocket image out)
+- **Python 3** (a project venv is created automatically on first run).
+- **A Gemini API key** for the topic "mood" brain — the one hybrid piece (pennies/night).
+  Drop it in `.env` next to `server.py`: `echo 'GEMINI_API_KEY=…' > .env`
+- **[AutoLume](https://www.metacreation.net/autolume)** — optional, only for the substrate layer.
+
+## Run it
+
+**One command** (starts ComfyUI if needed + the conductor, then opens the browser):
 
 ```bash
-# 1. get a free Gemini API key: https://aistudio.google.com/app/apikey
-# 2. drop it in a .env file next to server.py (gitignored):
-echo 'GEMINI_API_KEY=your-key-here' > .env
-# 3. run the server and open it:
-python3 server.py
-# then open http://localhost:8765 in Chrome
+./start.sh
+# override paths: NYE_COMFYUI_DIR=/path/to/ComfyUI  NYE_BROWSER="Google Chrome"  ./start.sh
 ```
 
-(You can also export `GEMINI_API_KEY` as an environment variable instead of
-using `.env`.)
+Or start the pieces by hand:
 
-Then:
+```bash
+# 1. ComfyUI (Apple Silicon flags — fp32 VAE avoids black-frame NaNs in the loop)
+cd /path/to/ComfyUI
+.venv/bin/python main.py --force-fp16 --use-pytorch-cross-attention --fp32-vae
 
-1. Click **TUNE IN** and allow the microphone.
-2. Play the show out loud from anything - YouTube, archive.org, VLC. The mic
-   hears the room, so nothing needs to be wired together.
-3. Press `F` for fullscreen and let it ride.
+# 2. the conductor (creates its venv + installs deps on first run)
+cd /path/to/kingdom-of-nye
+python3 server.py            # → http://localhost:8765
+```
 
-Chrome specifically, because topic detection uses the Web Speech API
-(`webkitSpeechRecognition`), which other browsers barely support. Without it
-(or with the mic denied) the visualizer still runs - audio-reactive only, or
-drifting on its own in demo mode.
+Open **http://localhost:8765**, click **TUNE IN**, allow the mic, and **play the show out
+loud**. Press `F` for fullscreen and let it ride. The mic hears the room, so nothing needs
+to be wired together — YouTube, archive.org, VLC, whatever.
 
-## The AI layers
-
-`server.py` is a zero-dependency stdlib proxy: it holds the API key so it never
-touches the browser, and it saves your dream gallery locally.
-
-- **Topic brain** (Gemini flash-lite text model): every ~45 s it reads the
-  rolling transcript and designs the mood - label, palette, scene, intensity.
-  The visuals follow ANY topic, not just the 7 built-in moods. Pennies per night.
-- **Dream layer** (`gemini-2.5-flash-image`): paints visions of the current
-  topic, melted into the shader and warped by the bass. New image on topic
-  change (25 s debounce) plus a slow ambient refresh. ~$0.04/image,
-  ~$0.30-0.60/evening, hard session cap, live cost ticker in the HUD.
-- **Continuity**: each vision is handed back as a reference image, so the night
-  is one long evolving hallucination (toggle in settings).
-- **Vision gallery**: every dream auto-saves to `visions/YYYY-MM-DD/` with its
-  prompt - wake up to the night's trip log.
+For the AutoLume substrate: launch AutoLume **Perform**, then press **`V`** in the browser
+and pick its window. To drive AutoLume live over OSC too, run the conductor with
+`NYE_AUTOLUME=1` (see `conductor/autolume_osc.py` for the address map).
 
 ## Keys
 
 | Key | Does |
 |-----|------|
 | `F` | fullscreen |
-| `1`-`7` | pin a mood (Nye, aliens, demons, ghosts, government, cryptids, wormhole) |
+| `1`–`7` | pin a mood (Nye, aliens, demons, ghosts, government, cryptids, wormhole) |
 | `0` | back to automatic (follow the conversation) |
-| `G` | toggle the AI dream layer |
-| `B` | next MilkDrop preset (turns the layer on if it's off) |
-| `S` | live spectrum overlay (see the audio-reactivity raw) |
-| `C` | settings drawer (cadence, opacity, reactivity, blend, cap) |
+| `←` / `→` | step through the moods |
+| `V` | capture / release the AutoLume window as the substrate |
+| `G` | pause / resume the dream layer |
+| `S` | live spectrum overlay (see the audio reactivity raw) |
+| `P` | capture the current frame as a PNG |
+| `H` | hide / show the console (clean projection) |
+| `C` | the console (dream presence, substrate presence, reactivity) |
+| `?` | show all controls · `Esc` closes |
 
-## How it decides the mood
+## How it works
 
-Two layers. The keyword engine reacts instantly: ~140 trigger words score into
-7 moods with a 45 s decay half-life. The LLM brain reads the whole transcript
-every ~45 s and can override with a custom palette + scene for topics the
-keywords don't know. Beat detection (spectral flux) makes everything kick in
-time, and sustained periodic beats flip bumper-music mode, which surges the
-MilkDrop layer.
+```
+room audio ─┬─► browser: WebAudio FFT ─► bands + spectral-flux beats ─► shader + keyword scorer
+            └─► conductor: faster-whisper (local STT) ─► words
 
-Tinker via the console: `__abv.state`, `__abv.BRAIN`, `__abv.CHURN`,
-`__abv.SETTINGS`, `__abv.fireDream()`, `__abv.hearTranscript('the demons are here')`.
+                       ┌──────────────── conductor (Python, one asyncio loop) ───────────────┐
+   browser ◄──WS──────►│  words + Gemini mood  ──►  slow-emergence control law                │
+   (WebGL composite)   │        │                     (blend · denoise · seed clock)           │
+        ▲   ▲          │        └──► ComfyUI img2img feedback loop ──► frames ──► (proxied back)│
+        │   │          │        └──► AutoLume OSC co-drive (optional, shares the same clock)    │
+        │   └──NDI/window-capture◄── AutoLume Perform (StyleGAN substrate)                      │
+        └─────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+- **The browser** owns real-time audio features (FFT bands, spectral-flux beat detection,
+  bumper-music mode) and all rendering. It streams those features up and receives words,
+  mood, and dream frames back over one WebSocket.
+- **The conductor** (`conductor/`) owns words (local Whisper), mood (Gemini `/interpret`
+  — label, theme, scene, palette, intensity), generation (ComfyUI), and substrate steering
+  (AutoLume OSC). It runs everything on a single asyncio loop; the blocking bits (Whisper,
+  Gemini) go to executor threads.
+- **The slow-emergence control law** (`conductor/control.py`) is the signature mechanic. A
+  new topic sets a *target* prompt; the visual eases toward it over ~30 s (smoothstep). A
+  denoise envelope makes each apparition **gather → settle → dissolve**; a shared ~8 s seed
+  clock drifts both engines together; bass, beats, and bumper-music bend it all in real time.
+- **The feedback loop** (`conductor/comfy.py`) feeds each frame back into the next at low
+  denoise, so the image *morphs* continuously instead of regenerating. A denoise floor and a
+  periodic clean-repaint keep the loop from diverging into grid/plaid artifacts on MPS.
+
+Tinker from the browser console: `__abv.state`, `__abv.BRAIN`, `__abv.CONDUCTOR`,
+`__abv.SUB`, `__abv.SETTINGS`, `__abv.toggleSubstrate()`.
+
+## Configuration
+
+Everything worth changing is an environment variable (see `conductor/comfy.py`,
+`conductor/asr.py`, `conductor/autolume_osc.py`):
+
+| Var | Default | What |
+|-----|---------|------|
+| `NYE_COMFY_CKPT` | `DreamShaper8_LCM.safetensors` | ComfyUI checkpoint |
+| `NYE_COMFY_STEPS` / `NYE_COMFY_CFG` | `6` / `2.0` | sampler steps / cfg |
+| `NYE_WHISPER_MODEL` | `base.en` | faster-whisper model |
+| `NYE_AUTOLUME` | off | `1` to enable AutoLume OSC co-drive |
+| `NYE_AUTOLUME_PORT` | `1338` | AutoLume OSC port (v2.17-rc1 default) |
+| `NYE_OSC_*` | see `autolume_osc.py` | per-parameter OSC addresses — reconcile with AutoLume's "Use OSC" bindings |
+| `GEMINI_API_KEY` | — | topic-brain key (`.env` also works) |
+
+> **AutoLume note:** the OSC *port* (1338) is confirmed; the OSC *addresses* are set
+> per-parameter inside AutoLume's Perform "Use OSC" popups, so match the app's bindings
+> to the names the conductor prints on startup (with `NYE_AUTOLUME=1`). Pretrained
+> pickles for the substrate live at `~/Code/autolume-models/` (metfaces, afhqwild).
 
 ## Credits & license
 
-MIT licensed - see [LICENSE](./LICENSE). Bundles
-[Butterchurn](https://github.com/jberg/butterchurn), the WebGL MilkDrop 2
-engine by Jordan Berg and contributors (also MIT).
+MIT licensed — see [LICENSE](./LICENSE). Built on
+[ComfyUI](https://github.com/comfyanonymous/ComfyUI),
+[comfyui-tooling-nodes](https://github.com/Acly/comfyui-tooling-nodes),
+[faster-whisper](https://github.com/SYSTRAN/faster-whisper), DreamShaper by Lykon, and
+[AutoLume](https://www.metacreation.net/autolume) from SFU's Metacreation Lab.
 
-Built for late-night [Art Bell](https://en.wikipedia.org/wiki/Art_Bell) /
-Coast to Coast AM sessions. The name is a nod to Pahrump, Nevada - the Kingdom
-of Nye - where Art broadcast from his home studio.
+The name is a nod to Pahrump, Nevada — the Kingdom of Nye — where Art broadcast from his
+home studio.
