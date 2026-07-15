@@ -135,6 +135,41 @@
   #legend h3 { color: var(--amber-dim); font-weight: normal; letter-spacing: 0.34em; text-transform: uppercase; font-size: 13px; margin: 0 0 18px; }
   #legend p { margin: 10px 0; font-size: 13px; letter-spacing: 0.06em; color: rgba(180,175,205,0.85); }
   #legend b { color: var(--amber); font-weight: normal; }
+
+  /* player transport bar (bottom center) */
+  #player { display: none; }
+  #player-bar {
+    position: absolute; left: 50%; bottom: 20px; transform: translateX(-50%); z-index: 7;
+    display: flex; align-items: center; gap: 12px; max-width: 88vw;
+    padding: 8px 14px; border-radius: 999px;
+    background: rgba(8,5,16,0.7); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
+    border: 1px solid rgba(217,176,108,0.25);
+    font-size: 12px; letter-spacing: 0.08em; transition: opacity 1s ease;
+  }
+  body.hud-off #player-bar { opacity: 0; pointer-events: none; }
+  #player-bar button, #player-bar label {
+    font-family: inherit; font-size: 12px; letter-spacing: 0.14em; cursor: pointer;
+    background: transparent; color: var(--amber); border: 1px solid rgba(217,176,108,0.4);
+    border-radius: 999px; padding: 5px 13px; white-space: nowrap;
+  }
+  #player-bar button:hover, #player-bar label:hover { border-color: var(--amber); }
+  #pbTitle { color: rgba(224,219,240,0.8); font-style: italic; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 40vw; }
+  #pbFile { display: none; }
+
+  /* find-episodes overlay */
+  #episodes { position: absolute; inset: 0; z-index: 11; display: none; align-items: center; justify-content: center;
+              background: rgba(5,3,11,0.72); -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px); }
+  body.episodes-on #episodes { display: flex; }
+  #episodes .card { border: 1px solid rgba(217,176,108,0.3); border-radius: 12px; padding: 30px 40px;
+                    background: rgba(10,6,20,0.92); max-width: 540px; text-align: center; }
+  #episodes h3 { color: var(--amber-dim); font-weight: normal; letter-spacing: 0.3em; text-transform: uppercase; font-size: 13px; margin: 0 0 14px; }
+  #episodes a { display: block; margin: 10px 0; color: var(--amber); text-decoration: none; letter-spacing: 0.04em; font-size: 14px; }
+  #episodes a:hover { text-shadow: 0 0 12px rgba(232,201,136,0.55); }
+  #episodes .note { color: rgba(150,145,175,0.75); font-size: 11px; line-height: 1.7; margin: 8px 0 16px; }
+  #episodes .note.dim { color: rgba(150,145,175,0.5); margin: 16px 0 4px; }
+  #episodes #epClose { margin-top: 12px; font-family: inherit; background: transparent; color: var(--amber);
+                       border: 1px solid rgba(217,176,108,0.4); border-radius: 999px; padding: 6px 20px; cursor: pointer;
+                       letter-spacing: 0.2em; text-transform: uppercase; font-size: 11px; }
   #srBadge, #genBadge { font-size: 10px; color: rgba(150,145,175,0.42); margin-top: 5px; letter-spacing: 0.14em; }
 
   #settings {
@@ -206,7 +241,28 @@
   <p><b>F</b> fullscreen &nbsp;·&nbsp; <b>H</b> hide console &nbsp;·&nbsp; <b>C</b> settings</p>
   <p><b>1–7</b> pin a mood &nbsp;·&nbsp; <b>← →</b> step moods &nbsp;·&nbsp; <b>0</b> auto</p>
   <p><b>V</b> AutoLume substrate &nbsp;·&nbsp; <b>G</b> dreams on/off &nbsp;·&nbsp; <b>S</b> spectrum</p>
+  <p><b>Space</b> play / pause &nbsp;·&nbsp; drop an audio file to play it</p>
   <p><b>P</b> capture the séance &nbsp;·&nbsp; <b>?</b> this list &nbsp;·&nbsp; <b>Esc</b> close</p>
+</div></div>
+
+<audio id="player" crossorigin="anonymous"></audio>
+<div id="player-bar">
+  <button id="pbPlay" title="play / pause (space)">▷</button>
+  <span id="pbTitle">drop an Art Bell file · or press ▷ for Nightwaves</span>
+  <label id="pbLoad" title="load an audio file">load ⬆<input type="file" id="pbFile" accept="audio/*"></label>
+  <button id="pbFind" title="where to find episodes">episodes ↗</button>
+</div>
+
+<div id="episodes"><div class="card">
+  <h3>Where to find Art Bell</h3>
+  <p class="note">Nothing is bundled — the shows are copyrighted. Drop in files you own,
+     or find them below (opens a new tab).</p>
+  <a href="https://www.youtube.com/@TheArtBellVault" target="_blank" rel="noopener">Art Bell Vault — official YouTube ↗</a>
+  <a href="https://archive.org/details/the-ultimate-art-bell-collection_202201" target="_blank" rel="noopener">The Ultimate Art Bell Collection — archive.org ↗</a>
+  <a href="https://archive.org/details/artbellshows" target="_blank" rel="noopener">Art Bell &amp; Coast to Coast shows — archive.org ↗</a>
+  <a href="https://archive.org/details/coast-to-coast-am-with-art-bell-ghost-to-ghost" target="_blank" rel="noopener">Ghost to Ghost — archive.org ↗</a>
+  <p class="note dim">archive.org items are fan uploads; the Vault is the rights-holder's own channel.</p>
+  <button id="epClose">close</button>
 </div></div>
 
 <aside id="settings">
@@ -313,6 +369,9 @@ const THEME_ORDER = ['nye', 'aliens', 'demons', 'ghosts', 'gov', 'cryptids', 'ti
 const state = {
   running: false,
   demoMode: false,          // no mic - synthesized levels
+  source: 'mic',            // 'mic' | 'player' — which input feeds the analyser
+  playing: false,           // is the built-in player playing a track
+  trackTitle: '',
   forcedTheme: null,        // manual override via number keys
   scores: {},               // theme -> decaying keyword score
   weights: {},              // theme -> current blend weight (lerped)
@@ -808,18 +867,90 @@ const SPAWNERS = {
    AUDIO - mic → FFT → bass/mid/treble/rms with slow AGC
    ============================================================ */
 let analyser = null, freqData = null, audioCtx = null, micSource = null;
+let playerSrc = null, playerGain = null;
 
 async function initAudio() {
-  const stream = await navigator.mediaDevices.getUserMedia({
-    audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false }
-  });
   audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-  micSource = audioCtx.createMediaStreamSource(stream);
   analyser = audioCtx.createAnalyser();
   analyser.fftSize = 2048;
   analyser.smoothingTimeConstant = 0.55;
-  micSource.connect(analyser);
   freqData = new Uint8Array(analyser.frequencyBinCount);
+
+  // the built-in player always feeds the speakers (so the conductor's mic hears it for
+  // Whisper); its analyser tap is switched in via setSource('player')
+  const pEl = document.getElementById('player');
+  playerSrc = audioCtx.createMediaElementSource(pEl);
+  playerGain = audioCtx.createGain();
+  playerSrc.connect(playerGain);
+  playerGain.connect(audioCtx.destination);
+  pEl.addEventListener('ended', pauseTrack); // non-looping file finished -> back to room
+
+  // the microphone is optional — the app (and the player) still run without it
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false }
+    });
+    micSource = audioCtx.createMediaStreamSource(stream);
+  } catch (e) {
+    micSource = null;
+    state.srStatus = 'mic off — press ▷ to play, or drop an Art Bell file';
+  }
+  setSource(micSource ? 'mic' : 'player');
+}
+
+// route exactly ONE input into the analyser (mic OR player) so they don't mix or howl
+function setSource(which) {
+  if (!audioCtx) return;
+  try { micSource && micSource.disconnect(analyser); } catch (e) {}
+  try { playerGain && playerGain.disconnect(analyser); } catch (e) {}
+  if (which === 'mic' && micSource) { micSource.connect(analyser); state.source = 'mic'; }
+  else { which = 'player'; if (playerGain) playerGain.connect(analyser); state.source = 'player'; }
+  // demo mode (synthesized reactivity) only when nothing real is feeding the analyser
+  state.demoMode = (state.source === 'mic') ? false : !state.playing;
+}
+
+/* ============================================================
+   THE PLAYER - bring-your-own audio + a bundled CC0 demo track
+   ============================================================ */
+function loadTrack(fileOrUrl, title, loop) {
+  const p = document.getElementById('player');
+  if (p.src && p.src.startsWith('blob:')) URL.revokeObjectURL(p.src);
+  p.src = (typeof fileOrUrl === 'string') ? fileOrUrl : URL.createObjectURL(fileOrUrl);
+  p.loop = !!loop;
+  state.trackTitle = title;
+  playTrack();
+}
+
+async function playTrack() {
+  if (!state.running) await startup();       // pressing play before TUNE IN boots it all
+  const p = document.getElementById('player');
+  if (!p.src) { loadTrack('/assets/nye-nightwaves.mp3', 'Nightwaves', true); return; }
+  try {
+    await p.play();
+    state.playing = true; state.demoMode = false;
+    setSource('player'); updatePlayerUI();
+  } catch (e) {}
+}
+
+function pauseTrack() {
+  document.getElementById('player').pause();
+  state.playing = false;
+  if (micSource) setSource('mic'); else state.demoMode = true; // fall back to the room
+  updatePlayerUI();
+}
+
+function togglePlay() {
+  const p = document.getElementById('player');
+  (!p.src || p.paused) ? playTrack() : pauseTrack();
+}
+
+function updatePlayerUI() {
+  const el = document.getElementById('pbTitle');
+  if (el) el.textContent = state.trackTitle
+    ? (state.playing ? '♪ ' : '❚❚ ') + state.trackTitle
+    : 'drop an Art Bell file · or press ▷ for Nightwaves';
+  const btn = document.getElementById('pbPlay');
+  if (btn) btn.textContent = state.playing ? '❚❚' : '▷';
 }
 
 /* --- spectral-flux beat detection + bumper-music discrimination --- */
@@ -1348,7 +1479,8 @@ requestAnimationFrame(frame);
 /* ============================================================
    UI - splash, keys, idle hiding
    ============================================================ */
-document.getElementById('tune').addEventListener('click', async () => {
+async function startup() {
+  if (state.running) return;
   document.getElementById('splash').classList.add('gone');
   document.getElementById('hud').style.opacity = '';
   state.running = true;
@@ -1357,10 +1489,28 @@ document.getElementById('tune').addEventListener('click', async () => {
     await initAudio();
   } catch (e) {
     state.demoMode = true;
-    state.srStatus = 'mic unavailable - visuals drift on their own (keys 1–7 set the mood)';
-    autoDrift();
+    state.srStatus = 'audio unavailable - visuals drift on their own (keys 1–7 set the mood)';
   }
+  if (!micSource) autoDrift(); // no mic -> wander the moods when nothing is playing
   document.getElementById('srBadge').textContent = state.srStatus;
+  updatePlayerUI();
+}
+document.getElementById('tune').addEventListener('click', startup);
+
+/* --- player wiring --- */
+document.getElementById('pbPlay').addEventListener('click', togglePlay);
+document.getElementById('pbFile').addEventListener('change', e => {
+  const f = e.target.files[0];
+  if (f) loadTrack(f, f.name.replace(/\.[^.]+$/, ''), false);
+});
+document.getElementById('pbFind').addEventListener('click', () => document.body.classList.toggle('episodes-on'));
+document.getElementById('epClose').addEventListener('click', () => document.body.classList.remove('episodes-on'));
+// drag an audio file anywhere onto the window to play it
+window.addEventListener('dragover', e => e.preventDefault());
+window.addEventListener('drop', e => {
+  e.preventDefault();
+  const f = [...(e.dataTransfer.files || [])].find(x => x.type.startsWith('audio'));
+  if (f) loadTrack(f, f.name.replace(/\.[^.]+$/, ''), false);
 });
 
 // with no mic/speech, wander through the moods slowly on its own
@@ -1399,11 +1549,14 @@ window.addEventListener('keydown', (e) => {
     captureNext = true; // save the current frame as a PNG
   } else if (k === 'h' || k === 'H') {
     document.body.classList.toggle('hud-off'); // clean projection vs narrated
+  } else if (k === ' ') {
+    e.preventDefault(); togglePlay(); // space: play / pause the built-in player
   } else if (k === 'c' || k === 'C') {
     document.getElementById('settings').classList.toggle('open');
   } else if (k === 'Escape') {
     document.getElementById('settings').classList.remove('open');
     document.body.classList.remove('legend-on');
+    document.body.classList.remove('episodes-on');
   } else if (k === '?' || (k === '/' && e.shiftKey)) {
     document.body.classList.toggle('legend-on');
   }

@@ -64,6 +64,12 @@ The whole *pixel* layer was rebuilt; the audio + speech + topic nervous system w
 7. **Interface** — a broadcast-console HUD (ON AIR indicator, mood label, signal meter,
    bumper-music badge, whispered transcript), a redesigned splash, and a v3 console
    (`C`: dream presence, substrate presence, reactivity). Own `nye3-settings` namespace.
+8. **The player** — a `<audio>` element routed into the analyser (visuals) + speakers
+   (so the mic-fed brain still transcribes it), with a `setSource(mic|player)` switch.
+   Drag-your-own-file for real (user-owned) episodes; a bundled **CC0** "Nightwaves"
+   ambience (`assets/`, generated from scratch) for instant press-play; an "episodes"
+   panel linking out to the Art Bell Vault + archive.org. **No Art Bell audio is bundled
+   or hosted** — it's copyrighted; the safe stack is bring-your-own + link-out + CC0 demo.
 
 Kept from before: the FFT band engine with slow AGC and attack/release smoothing;
 spectral-flux beat detection + bumper-music hysteresis; the ~140-word keyword scorer with

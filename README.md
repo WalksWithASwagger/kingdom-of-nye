@@ -62,6 +62,22 @@ For the AutoLume substrate: launch AutoLume **Perform**, then press **`V`** in t
 and pick its window. To drive AutoLume live over OSC too, run the conductor with
 `NYE_AUTOLUME=1` (see `conductor/autolume_osc.py` for the address map).
 
+## Playing audio
+
+Three ways to feed it, all in the transport bar at the bottom:
+
+- **Drop your own file** — drag any audio file (an Art Bell episode you own) onto the
+  window, or click **load ⬆**. It plays out loud (so the topic brain still hears it) and
+  drives the visuals directly. This is the intended way to hear real shows.
+- **▷ Nightwaves** — press play with nothing loaded for the bundled **CC0** ambience (an
+  original shortwave/numbers-station bed — see `assets/CREDITS.md`).
+- **The room** — with nothing playing, the mic reacts to whatever's in the room, including
+  a YouTube tab. Press **`Space`** to toggle play/pause.
+
+**No Art Bell audio is bundled or hosted** — the shows are copyrighted. The **episodes ↗**
+button links out to the official Art Bell Vault (YouTube) and the archive.org fan
+collections; bring your own files for playback.
+
 ## Keys
 
 | Key | Does |
@@ -70,6 +86,7 @@ and pick its window. To drive AutoLume live over OSC too, run the conductor with
 | `1`–`7` | pin a mood (Nye, aliens, demons, ghosts, government, cryptids, wormhole) |
 | `0` | back to automatic (follow the conversation) |
 | `←` / `→` | step through the moods |
+| `Space` | play / pause the built-in player |
 | `V` | capture / release the AutoLume window as the substrate |
 | `G` | pause / resume the dream layer |
 | `S` | live spectrum overlay (see the audio reactivity raw) |
