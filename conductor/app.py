@@ -95,9 +95,25 @@ async def ws_handler(request):
                     a.ts = float(data.get("ts", 0.0))
                 except (TypeError, ValueError):
                     continue  # one malformed frame shouldn't drop the control plane
+            elif data.get("type") == "control":
+                _apply_control(hub, data.get("key"), data.get("value"))
     finally:
         hub.remove(ws)
     return ws
+
+
+def _apply_control(hub, key, value):
+    """Live control-surface knobs from the browser."""
+    st = hub.state
+    try:
+        if key == "denoise":                       # morph slider (-0.25 .. +0.30)
+            st.denoise_bias = max(-0.25, min(0.30, float(value)))
+        elif key == "reseed":                      # remix button
+            st.reseed_seq += 1
+        elif key and key.startswith("osc:"):       # AutoLume slider -> OSC override
+            st.osc_manual[key.split(":", 1)[1]] = float(value)
+    except (TypeError, ValueError):
+        pass
 
 
 async def static_handler(request):

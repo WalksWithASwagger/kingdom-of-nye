@@ -49,6 +49,15 @@ class ControlState:
     seed: int = 1
     emergence: float = 0.0  # gather->settle->dissolve envelope, 0..1
 
+    # open-vocab words currently woven into the dream (for the on-screen "dreaming of")
+    vision_words: list = field(default_factory=list)
+    vision_seq: int = 0
+
+    # live overrides from the browser control surface
+    denoise_bias: float = 0.0                                   # morph slider
+    reseed_seq: int = 0                                         # remix button
+    osc_manual: dict = field(default_factory=dict)             # AutoLume slider values
+
     running: bool = True
 
 

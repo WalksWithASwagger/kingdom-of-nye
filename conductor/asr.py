@@ -18,11 +18,11 @@ import os
 
 SR = 16000
 BLOCK = 1600            # 0.1 s
-SPEECH_RMS = float(os.environ.get("NYE_SPEECH_RMS", "0.012"))
-SILENCE_HANG = 0.7     # s of quiet after speech -> flush
-MIN_PHRASE = 0.8       # s; ignore sub-second blips
-MAX_WINDOW = 9.0       # s; flush even mid-sentence so we never lag far behind
-MODEL_NAME = os.environ.get("NYE_WHISPER_MODEL", "base.en")
+SPEECH_RMS = float(os.environ.get("NYE_SPEECH_RMS", "0.006"))  # lower = hears quieter talk
+SILENCE_HANG = 0.6     # s of quiet after speech -> flush
+MIN_PHRASE = 0.5       # s; catch short utterances too
+MAX_WINDOW = 8.0       # s; flush even mid-sentence so we never lag far behind
+MODEL_NAME = os.environ.get("NYE_WHISPER_MODEL", "small.en")   # more accurate than base.en
 
 
 def _load_model():
