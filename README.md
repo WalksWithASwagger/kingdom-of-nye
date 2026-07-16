@@ -1,5 +1,11 @@
 # The Kingdom of Nye — v3
 
+![A late-night broadcast den the dream engine conjured on its own](docs/hero.png)
+
+> *A frame the local ComfyUI engine dreamed mid-session — no prompt but what the room was
+> talking about. The live app melts frames like this into the AutoLume substrate under a
+> film-grain, ON-AIR console.*
+
 A local, open-source, **audio- and speech-reactive** visualizer for late-night
 [Art Bell](https://en.wikipedia.org/wiki/Art_Bell) / Coast to Coast AM sessions. It
 listens to the room, understands what the show is about, and paints a slow, evolving
