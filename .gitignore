@@ -7,3 +7,6 @@ visions/
 # python
 __pycache__/
 *.pyc
+
+# python venv
+.venv/
