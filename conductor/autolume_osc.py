@@ -68,10 +68,13 @@ class Sender:
         a = st.audio
         intensity = (st.mood or {}).get("intensity", 0.5) if st.mood else 0.5
         music_boost = 0.6 if a.music_mode else 0.0
+        man = st.osc_manual  # live slider overrides from the control surface
 
-        # diversity opens up with intensity + audio; global noise rides the low end
-        diversity = max(0.0, min(2.0, intensity * (0.6 + a.rms) + a.bass * 0.5))
-        noise = max(0.0, min(2.0, a.bass + music_boost + 0.15 * a.mid))
+        # a manual slider takes over that knob; otherwise it's audio-driven
+        diversity = man["diversity"] if "diversity" in man \
+            else max(0.0, min(2.0, intensity * (0.6 + a.rms) + a.bass * 0.5))
+        noise = man["noise"] if "noise" in man \
+            else max(0.0, min(2.0, a.bass + music_boost + 0.15 * a.mid))
         self.client.send_message(ADDR["diversity"], float(diversity))
         self.client.send_message(ADDR["noise"], float(noise))
 

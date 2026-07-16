@@ -114,6 +114,7 @@
     color: rgba(232,201,136,0.92); text-shadow: 0 0 18px rgba(217,176,108,0.35);
   }
   #hudBrain { font-style: italic; color: rgba(169,211,184,0.72); margin-top: 4px; min-height: 1.1em; letter-spacing: 0.08em; }
+  #hudVision { color: rgba(232,201,136,0.82); margin-top: 5px; min-height: 1.1em; font-size: 13px; letter-spacing: 0.06em; text-shadow: 0 0 12px rgba(217,176,108,0.3); }
   .sig { display: flex; align-items: center; gap: 9px; margin-top: 9px; font-size: 10px; letter-spacing: 0.32em; text-transform: uppercase; color: rgba(180,175,205,0.5); }
   #meter { display: inline-block; width: 104px; height: 5px; background: rgba(255,255,255,0.09); border-radius: 3px; overflow: hidden; }
   #meterFill { height: 100%; width: 0%; background: linear-gradient(90deg, rgba(232,201,136,0.5), rgba(232,201,136,0.95)); border-radius: 3px; }
@@ -193,6 +194,10 @@
   #settings .sec { margin-top: 26px; font-size: 10px; letter-spacing: 0.3em; text-transform: uppercase; color: rgba(217,176,108,0.5); border-top: 1px solid rgba(217,176,108,0.12); padding-top: 16px; }
   #settings .hint { margin-top: 14px; font-size: 11px; color: rgba(150,145,175,0.6); line-height: 2; }
   #settings .hint b { color: rgba(217,176,108,0.75); font-weight: normal; }
+  #settings .cbtn { margin-top: 16px; width: 100%; font-family: inherit; background: transparent;
+    color: var(--amber); border: 1px solid rgba(217,176,108,0.4); border-radius: 999px; padding: 9px;
+    cursor: pointer; letter-spacing: 0.14em; font-size: 12px; transition: box-shadow .3s, border-color .3s; }
+  #settings .cbtn:hover { border-color: var(--amber); box-shadow: 0 0 18px rgba(217,176,108,0.25); }
 </style>
 </head>
 <body>
@@ -224,6 +229,7 @@
   <div class="onair"><span class="dot"></span> On Air</div>
   <div class="theme" id="hudTheme">the kingdom of nye</div>
   <div id="hudBrain"></div>
+  <div id="hudVision"></div>
   <div class="sig">Signal <span id="meter"><span id="meterFill"></span></span> <span id="beatDot">●</span></div>
   <div id="hudMusic">♫ bumper music</div>
   <div class="status">
@@ -240,7 +246,7 @@
   <h3>The Controls</h3>
   <p><b>F</b> fullscreen &nbsp;·&nbsp; <b>H</b> hide console &nbsp;·&nbsp; <b>C</b> settings</p>
   <p><b>1–7</b> pin a mood &nbsp;·&nbsp; <b>← →</b> step moods &nbsp;·&nbsp; <b>0</b> auto</p>
-  <p><b>V</b> AutoLume substrate &nbsp;·&nbsp; <b>G</b> dreams on/off &nbsp;·&nbsp; <b>S</b> spectrum</p>
+  <p><b>V</b> AutoLume substrate &nbsp;·&nbsp; <b>K</b> kaleidoscope &nbsp;·&nbsp; <b>G</b> dreams on/off &nbsp;·&nbsp; <b>S</b> spectrum</p>
   <p><b>Space</b> play / pause &nbsp;·&nbsp; drop an audio file to play it</p>
   <p><b>P</b> capture the séance &nbsp;·&nbsp; <b>?</b> this list &nbsp;·&nbsp; <b>Esc</b> close</p>
 </div></div>
@@ -274,6 +280,14 @@
   <input type="range" id="sSub" min="0" max="100" step="5">
   <label>reactivity <span class="val" id="vReact"></span></label>
   <input type="range" id="sReact" min="50" max="200" step="10">
+  <div class="sec">Play</div>
+  <label>morph <span class="val" id="vMorph"></span></label>
+  <input type="range" id="sMorph" min="0" max="100" step="5" value="45">
+  <label>AutoLume diversity <span class="val" id="vDiv"></span></label>
+  <input type="range" id="sDiv" min="0" max="200" step="5" value="80">
+  <label>AutoLume noise <span class="val" id="vNoise"></span></label>
+  <input type="range" id="sNoise" min="0" max="200" step="5" value="100">
+  <button id="bRemix" class="cbtn">⟳ remix — break the form</button>
   <div class="sec">Keys</div>
   <div class="hint">
     <b>F</b> fullscreen · <b>1–7</b> pin a mood · <b>0</b> auto<br>
@@ -372,6 +386,7 @@ const state = {
   source: 'mic',            // 'mic' | 'player' — which input feeds the analyser
   playing: false,           // is the built-in player playing a track
   trackTitle: '',
+  kaleido: false,           // kaleidoscope mode (K)
   forcedTheme: null,        // manual override via number keys
   scores: {},               // theme -> decaying keyword score
   weights: {},              // theme -> current blend weight (lerped)
@@ -414,6 +429,9 @@ uniform sampler2D u_img0, u_img1;
 uniform float u_imgMix, u_imgAmt;
 uniform sampler2D u_sub;   // AutoLume substrate (live video)
 uniform float u_subAmt;
+uniform sampler2D u_feedback;  // previous frame (the flow/trails)
+uniform float u_fb;            // feedback amount
+uniform float u_kaleido;       // kaleidoscope on/off
 uniform float u_beat;
 
 float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
@@ -434,6 +452,18 @@ float fbm(vec2 p){
 
 void main(){
   vec2 uv = (gl_FragCoord.xy - 0.5 * u_res) / u_res.y;
+
+  // beat zoom punch — the whole frame lunges toward center on a hit
+  uv *= 1.0 - 0.10 * u_beat;
+
+  // kaleidoscope (K) — fold the angle into a mirrored 6-fold wedge
+  if (u_kaleido > 0.5) {
+    float ka = atan(uv.y, uv.x);
+    float kr = length(uv);
+    float seg = 1.0471975;
+    ka = abs(mod(ka, 2.0 * seg) - seg);
+    uv = vec2(cos(ka), sin(ka)) * kr;
+  }
 
   // wormhole remap (polar tunnel), blended in by u_tunnel
   float rad = length(uv) + 1e-4;
@@ -459,7 +489,8 @@ void main(){
 
   // one shared distortion, applied to BOTH engines so they inhabit a single space
   vec2 warp = (r - 0.5) * (0.015 + 0.10 * u_bass);
-  vec2 suv = gl_FragCoord.xy / u_res; suv.y = 1.0 - suv.y;
+  // screen uv derived from the folded/zoomed uv, so substrate + dream fold with it
+  vec2 suv = vec2(uv.x * (u_res.y / u_res.x), uv.y) + 0.5; suv.y = 1.0 - suv.y;
 
   // --- AutoLume substrate (StyleGAN video), domain-warped by the shared field ---
   vec3 col = neb;
@@ -485,6 +516,19 @@ void main(){
     col = mix(col, hall, u_imgAmt);
   }
 
+  // --- FEEDBACK: the frame flows into itself — drifting, trailing, morphing.
+  //     This is what makes it feel like navigating a living latent space. ---
+  if (u_fb > 0.01) {
+    vec2 c = vec2(0.5);
+    float rot = 0.003 + 0.014 * u_beat;                 // slow swirl, kicks on beats
+    mat2 R = mat2(cos(rot), -sin(rot), sin(rot), cos(rot));
+    float z = 1.0 - 0.010 - 0.03 * u_bass;              // gentle outward bloom
+    vec2 screen = gl_FragCoord.xy / u_res;              // raw screen space (FBO is screen-aligned)
+    vec2 fuv = c + R * ((screen - c) * z) + warp * 0.5; // drift + shared warp
+    vec3 fb = texture2D(u_feedback, fuv).rgb * 0.97;    // slight decay bounds the loop
+    col = mix(col, fb, u_fb);
+  }
+
   // starfield (cell-hashed points, treble twinkle)
   if (u_stars > 0.01) {
     vec2 sp = uv * u_res.y * 0.9;
@@ -504,13 +548,30 @@ void main(){
   // scanlines
   col *= 1.0 - u_scan * 0.22 * (0.5 + 0.5 * sin(gl_FragCoord.y * 1.7 + u_time * 8.0));
 
-  // shared film grain - the single stock that fuses substrate + apparition into one image
-  float grain = hash(gl_FragCoord.xy + fract(u_time) * 91.7) - 0.5;
-  col += grain * (0.045 + 0.05 * u_rms);
+  // grain + vignette are applied in the PRESENT pass so they never feed back
+  gl_FragColor = vec4(col, 1.0);
+}
+`;
 
-  // vignette
-  col *= smoothstep(1.30, 0.35, length(uv));
-
+// present pass — samples the rendered frame, adds the film stock (grain, vignette,
+// chromatic aberration) at the very end so none of it accumulates in the feedback loop
+const PRESENT_FRAG = `
+precision highp float;
+uniform sampler2D u_present;
+uniform vec2 u_res;
+uniform float u_time, u_rms, u_bass, u_beat;
+float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+void main(){
+  vec2 uv = gl_FragCoord.xy / u_res;
+  vec2 cuv = uv - 0.5;
+  float ca = 0.002 + 0.006 * u_bass + 0.004 * u_beat;
+  vec3 col;
+  col.r = texture2D(u_present, uv + cuv * ca).r;
+  col.g = texture2D(u_present, uv).g;
+  col.b = texture2D(u_present, uv - cuv * ca).b;
+  col += (hash(gl_FragCoord.xy + fract(u_time) * 91.7) - 0.5) * (0.05 + 0.05 * u_rms);
+  vec2 vv = (gl_FragCoord.xy - 0.5 * u_res) / u_res.y;
+  col *= smoothstep(1.30, 0.35, length(vv));
   gl_FragColor = vec4(col, 1.0);
 }
 `;
@@ -545,8 +606,49 @@ const U = {};
 for (const name of ['u_res', 'u_time', 'u_bass', 'u_mid', 'u_treble', 'u_rms',
   'u_colA', 'u_colB', 'u_colC', 'u_warp', 'u_zoom', 'u_stars', 'u_scan',
   'u_tunnel', 'u_ember', 'u_flow', 'u_img0', 'u_img1', 'u_imgMix', 'u_imgAmt',
-  'u_sub', 'u_subAmt', 'u_beat']) {
+  'u_sub', 'u_subAmt', 'u_feedback', 'u_fb', 'u_kaleido', 'u_beat']) {
   U[name] = gl.getUniformLocation(prog, name);
+}
+
+// present program (post-process pass) + its uniforms
+const present = gl.createProgram();
+gl.attachShader(present, compile(gl.VERTEX_SHADER, VERT));
+gl.attachShader(present, compile(gl.FRAGMENT_SHADER, PRESENT_FRAG));
+gl.linkProgram(present);
+if (!gl.getProgramParameter(present, gl.LINK_STATUS)) {
+  throw new Error('present link: ' + gl.getProgramInfoLog(present));
+}
+const P = {};
+for (const name of ['u_present', 'u_res', 'u_time', 'u_rms', 'u_bass', 'u_beat']) {
+  P[name] = gl.getUniformLocation(present, name);
+}
+// the present program needs the fullscreen triangle bound to its own a_pos too
+gl.useProgram(present);
+const aPosP = gl.getAttribLocation(present, 'a_pos');
+gl.useProgram(prog);
+
+// ping-pong framebuffers for the feedback loop (units 3 = read/feedback, 4 = present)
+function makeFBO() {
+  const tex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  const fb = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  return { fb, tex };
+}
+let fbA = makeFBO(), fbB = makeFBO();
+function resizeFBOs() {
+  for (const f of [fbA, fbB]) {
+    gl.bindTexture(gl.TEXTURE_2D, f.tex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, glCanvas.width, glCanvas.height, 0,
+      gl.RGBA, gl.UNSIGNED_BYTE, null);
+  }
 }
 
 // two dream textures, ping-ponged as new AI images arrive
@@ -585,6 +687,7 @@ function resize() {
   fxCanvas.width = Math.floor(W * DPR); fxCanvas.height = Math.floor(H * DPR);
   gl.viewport(0, 0, glCanvas.width, glCanvas.height);
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  resizeFBOs();
 }
 window.addEventListener('resize', resize);
 resize();
@@ -1189,7 +1292,20 @@ function initConductor() {
     let m; try { m = JSON.parse(ev.data); } catch (e) { return; }
     if (m.type === 'words') hearTranscript(m.delta || '');
     else if (m.type === 'mood') applyMood(m);
+    else if (m.type === 'vision') applyVision(m.words || []);
   };
+}
+
+// the open-vocab words the conductor is currently weaving into the dream
+function applyVision(words) {
+  const el = document.getElementById('hudVision');
+  if (el) el.textContent = words.length ? '◈ dreaming of ' + words.join(' · ') : '';
+}
+
+// send a live control-surface value to the conductor
+function sendControl(key, value) {
+  const ws = CONDUCTOR.ws;
+  if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'control', key, value }));
 }
 
 // a mood is only usable if its palette is a well-formed 3x3 of numbers
@@ -1354,6 +1470,7 @@ const elMeter = document.getElementById('meterFill');
 const elBeat = document.getElementById('beatDot');
 const elMusic = document.getElementById('hudMusic');
 let captureNext = false;
+let fbAmt = 0;   // eased feedback-trail amount
 
 function frame(tms) {
   requestAnimationFrame(frame);
@@ -1373,7 +1490,13 @@ function frame(tms) {
   flowAcc[0] += blended.flow[0] * dt;
   flowAcc[1] += blended.flow[1] * dt;
 
-  // --- GL layer ---
+  // --- GL PASS 1: composite + feedback into an offscreen buffer (fbA) ---
+  gl.useProgram(prog);
+  gl.bindBuffer(gl.ARRAY_BUFFER, quad);
+  gl.enableVertexAttribArray(aPos);
+  gl.vertexAttribPointer(aPos, 2, gl.FLOAT, false, 0, 0);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fbA.fb);
+  gl.viewport(0, 0, glCanvas.width, glCanvas.height);
   gl.uniform2f(U.u_res, glCanvas.width, glCanvas.height);
   gl.uniform1f(U.u_time, t);
   gl.uniform1f(U.u_bass, state.bass);
@@ -1400,8 +1523,39 @@ function frame(tms) {
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, SUB.video);
   }
   gl.uniform1f(U.u_subAmt, SUB.amt);
+  // pin the sampled textures to their fixed units — FBO creation/swaps can leave an
+  // offscreen texture on a sampled unit, which reads as a feedback loop when we draw
+  // to that same texture's framebuffer (GL_INVALID_OPERATION -> black screen)
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, dreamTex[0]);
+  gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, dreamTex[1]);
+  gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, subTex);
+  // feedback = last frame (fbB) on texture unit 3
+  gl.activeTexture(gl.TEXTURE3);
+  gl.bindTexture(gl.TEXTURE_2D, fbB.tex);
+  gl.uniform1i(U.u_feedback, 3);
+  const fbTarget = state.running ? (0.55 + 0.28 * state.bass + (state.musicMode ? 0.12 : 0)) : 0;
+  fbAmt += (fbTarget - fbAmt) * Math.min(1, dt * 1.5);
+  gl.uniform1f(U.u_fb, fbAmt);
+  gl.uniform1f(U.u_kaleido, state.kaleido ? 1.0 : 0.0);
   gl.uniform1f(U.u_beat, state.beat);
   gl.drawArrays(gl.TRIANGLES, 0, 3);
+
+  // --- GL PASS 2: present fbA to the screen with the final film stock ---
+  gl.useProgram(present);
+  gl.enableVertexAttribArray(aPosP);
+  gl.vertexAttribPointer(aPosP, 2, gl.FLOAT, false, 0, 0);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  gl.viewport(0, 0, glCanvas.width, glCanvas.height);
+  gl.activeTexture(gl.TEXTURE4);
+  gl.bindTexture(gl.TEXTURE_2D, fbA.tex);
+  gl.uniform1i(P.u_present, 4);
+  gl.uniform2f(P.u_res, glCanvas.width, glCanvas.height);
+  gl.uniform1f(P.u_time, t);
+  gl.uniform1f(P.u_rms, state.rms);
+  gl.uniform1f(P.u_bass, state.bass);
+  gl.uniform1f(P.u_beat, state.beat);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  { const sw = fbA; fbA = fbB; fbB = sw; }  // this frame's output -> next frame's feedback
 
   // --- 2D layer ---
   ctx.clearRect(0, 0, W, H);
@@ -1545,6 +1699,9 @@ window.addEventListener('keydown', (e) => {
     setGenStatus(GEN.on ? '' : 'dreams paused · G to resume');
   } else if (k === 'v' || k === 'V') {
     toggleSubstrate(); // grab / release the AutoLume window as the substrate
+  } else if (k === 'k' || k === 'K') {
+    state.kaleido = !state.kaleido; // kaleidoscope mirror
+    setGenStatus(state.kaleido ? 'kaleidoscope on' : '');
   } else if (k === 'p' || k === 'P') {
     captureNext = true; // save the current frame as a PNG
   } else if (k === 'h' || k === 'H') {
@@ -1580,6 +1737,24 @@ $s('sSub').addEventListener('input', e => {
 });
 $s('sReact').addEventListener('input', e => { SETTINGS.reactivity = +e.target.value / 100; saveSettings(); refreshSettingsUI(); });
 refreshSettingsUI();
+
+/* --- live control surface -> conductor --- */
+$s('vMorph').textContent = $s('sMorph').value + '%';
+$s('vDiv').textContent = (+$s('sDiv').value / 100).toFixed(2);
+$s('vNoise').textContent = (+$s('sNoise').value / 100).toFixed(2);
+$s('sMorph').addEventListener('input', e => {
+  $s('vMorph').textContent = e.target.value + '%';
+  sendControl('denoise', (+e.target.value / 100) * 0.55 - 0.25); // -> denoise bias
+});
+$s('sDiv').addEventListener('input', e => {
+  $s('vDiv').textContent = (+e.target.value / 100).toFixed(2);
+  sendControl('osc:diversity', +e.target.value / 100);
+});
+$s('sNoise').addEventListener('input', e => {
+  $s('vNoise').textContent = (+e.target.value / 100).toFixed(2);
+  sendControl('osc:noise', +e.target.value / 100);
+});
+$s('bRemix').addEventListener('click', () => { sendControl('reseed', 1); setGenStatus('remixed ✦'); });
 
 let idleTimer = null;
 function wake() {

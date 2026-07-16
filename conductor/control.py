@@ -1,50 +1,45 @@
 """The slow-emergence control law — the signature mechanic of v3.
 
-Spoken words never hard-cut to a picture. A new topic sets a *target*; the visual
-eases toward it over ~30 s while an envelope makes the apparition GATHER (denoise
-spikes so the feedback image dissolves and reforms), SETTLE (denoise falls to near
--frozen continuity), and DISSOLVE (denoise creeps back up as the reading fades),
-right before the next topic gathers. Audio breathes on top; bumper music breaks
-into a faster, more abstract mode.
+Spoken words never hard-cut to a picture. Two things shape the dream:
+  - a slow **base scene** from the topic brain (mood/palette, every ~45s), and
+  - the **live words** the room is actually saying, pulled verbatim from the Whisper
+    transcript (ANY evocative word, not just the 7 known themes) and injected straight
+    into the prompt. A new word gives a fast "gather" pulse (denoise spikes so the dream
+    reforms toward it), then settles. So you can throw quirky shit into the air and watch
+    it surface.
 
-This module owns the control-law fields on `hub.state` (prompt_a/prompt_b, blend,
-denoise, seed, emergence). comfy.py reads them each generation; autolume_osc.py
-(task 5) reads the same clock so substrate and dream move as one organism.
+This module owns the control-law fields on `hub.state`. comfy.py reads prompt_a/prompt_b/
+blend/denoise/seed each generation; autolume_osc.py reads the same clock. It also honors
+live overrides set from the browser control surface (denoise bias, reseed, OSC values).
 """
 
 from __future__ import annotations
 
 import asyncio
 import os
+import re
 
-# atmosphere appended to every apparition prompt — evocative, dreamlike, un-literal
 STYLE_SUFFIX = (
     "dark cinematic dreamscape, volumetric haze, film grain, deep shadow, "
     "analog late-night surrealism, no text, no words"
 )
-# steer hard away from the img2img feedback's favourite degenerate attractors
-# (tiled rooms, grid floors, plaid) as well as the usual text/border junk
 NEG_PROMPT = (
     "text, watermark, letters, caption, frame, border, grid, tiles, checkerboard, plaid, "
     "interior, room, ceiling, tiled floor, kitchen, low quality, blurry, jpeg artifacts"
 )
 REST_PROMPT = ("a vast empty nevada desert at night under an enormous starfield, a distant "
-               "lone radio tower with a faint red beacon, violet haze on the horizon, still and waiting")
+               "lone radio tower with a faint red beacon, violet haze on the horizon")
 
-TICK_HZ = 25
-T_TRAVEL_SPEECH = 30.0   # s to ease A->B in calm speech mode
-T_TRAVEL_MUSIC = 12.0    # faster during bumper-music breaks
-T_GATHER = 6.0           # s for the emergence envelope to peak
-T_SETTLE = 20.0          # s for it to decay back to rest
-# NB: img2img feedback loves geometric attractors (grid rooms, neon tunnels). Below ~0.45
-# denoise, a static prompt lets one build and lock in. Keeping the floor here means the
-# prompt reasserts every frame — looser continuity, but organic content instead of a grid.
-DENOISE_REST = 0.52
-DENOISE_MUSIC_REST = 0.60
-DENOISE_SPAN = 0.14      # envelope adds up to this (rest is already high)
-DENOISE_FLOOR = 0.46
-SEED_DRIFT_SEC = 8.0
-SEED_JUMP = 7            # break the form on a topic jump
+# words too common to be evocative — everything else the room says is fair game
+STOPWORDS = set("""
+the a an and or but so of to in on at by for with from into over under about as is are was
+were be been being have has had do does did will would can could should may might must not
+no yes this that these those there here it its it's i you he she we they them his her their
+our your my me him us who what when where why how which than then them if because while just
+really very kind sort like well okay yeah know think thing things stuff going gonna want
+said says say get got getting make made makes let lets going come came now some any all more
+most much many one two three them theyre youre thats whats dont cant im ive were weve
+""".split())
 
 
 def _smoothstep(x: float) -> float:
@@ -52,61 +47,119 @@ def _smoothstep(x: float) -> float:
     return x * x * (3.0 - 2.0 * x)
 
 
-def build_prompt(scene: str) -> str:
-    scene = (scene or "").strip().rstrip(".")
-    return f"{scene}, {STYLE_SUFFIX}" if scene else f"{REST_PROMPT}, {STYLE_SUFFIX}"
+def salient_words(text: str, keep: int = 5) -> list[str]:
+    """Most-recent evocative content words from the transcript tail."""
+    words = re.findall(r"[a-zA-Z']{4,}", text.lower())
+    out: list[str] = []
+    for w in reversed(words):          # most recent first
+        w = w.strip("'")
+        if w and w not in STOPWORDS and w not in out:
+            out.append(w)
+        if len(out) >= keep:
+            break
+    out.reverse()
+    return out
+
+
+def compose(base_scene: str, words: list[str]) -> str:
+    parts = []
+    if words:
+        parts.append(", ".join(words))          # the literal spoken words lead
+    if base_scene:
+        parts.append(base_scene.strip().rstrip("."))
+    body = ", ".join(parts) if parts else REST_PROMPT
+    return f"{body}, {STYLE_SUFFIX}"
+
+
+def build_prompt(scene: str) -> str:  # kept for comfy.py rest-state import compatibility
+    return compose(scene, [])
+
+
+TICK_HZ = 25
+T_TRAVEL_SPEECH = 26.0
+T_TRAVEL_MUSIC = 12.0
+T_GATHER = 6.0
+T_SETTLE = 20.0
+T_WORD_GATHER = 2.5      # a freshly-heard word spikes fast...
+T_WORD_DECAY = 9.0       # ...then settles
+DENOISE_REST = 0.52
+DENOISE_MUSIC_REST = 0.60
+DENOISE_SPAN = 0.14      # topic-change envelope
+DENOISE_WORD_SPAN = 0.13 # new-word pulse
+DENOISE_FLOOR = 0.46
+SEED_DRIFT_SEC = 8.0
+SEED_JUMP = 7
 
 
 class ControlLaw:
     def __init__(self) -> None:
         self.t = 0.0
         self.mood_seq_seen = 0
-        self.topic_at = -999.0     # when the current target started easing in
+        self.words_seen = -1
+        self.reseed_seen = 0
+        self.topic_at = -999.0     # last mood change (slow travel)
+        self.word_at = -999.0      # last new spoken word (fast pulse)
         self.last_seed_drift = 0.0
+        self.base_scene = ""       # from the LLM mood
+        self.live_words: list[str] = []
+
+    def _rebuild_target(self, st) -> None:
+        st.prompt_b = compose(self.base_scene, self.live_words)
 
     def on_new_mood(self, st, mood: dict) -> None:
-        # promote whatever we were easing toward, then aim at the new scene
         if st.blend > 0.35:
             st.prompt_a = st.prompt_b or st.prompt_a
-        st.prompt_b = build_prompt(mood.get("scene_prompt", ""))
+        self.base_scene = mood.get("scene_prompt", "") or ""
+        self._rebuild_target(st)
         st.blend = 0.0
         self.topic_at = self.t
-        st.seed += SEED_JUMP     # break the current attractor so a new form coalesces
+        st.seed += SEED_JUMP
 
-    def tick(self, st, dt: float) -> None:
+    def on_new_words(self, st, hub) -> None:
+        fresh = salient_words(hub.transcript_text())
+        if fresh and fresh != self.live_words:
+            self.live_words = fresh
+            self._rebuild_target(st)
+            self.word_at = self.t                 # fire the gather pulse
+            if st.blend > 0.75:
+                st.blend = 0.55                   # let the updated target ease back in
+            st.seed += 2
+            st.vision_words = fresh               # for the on-screen "dreaming of" line
+            st.vision_seq += 1
+
+    def tick(self, st, hub, dt: float) -> None:
         self.t += dt
 
-        # a fresh reading landed?
         if st.mood_seq != self.mood_seq_seen and st.mood:
             self.mood_seq_seen = st.mood_seq
             self.on_new_mood(st, st.mood)
+        if hub.words_seen != self.words_seen:
+            self.words_seen = hub.words_seen
+            self.on_new_words(st, hub)
+        if st.reseed_seq != self.reseed_seen:     # manual "remix" button
+            self.reseed_seen = st.reseed_seq
+            st.seed += SEED_JUMP + 5
 
         a = st.audio
         music = a.music_mode
         t_travel = T_TRAVEL_MUSIC if music else T_TRAVEL_SPEECH
         since = self.t - self.topic_at
-
-        # blend A -> B: smoothstep over the travel window
         st.blend = _smoothstep(since / t_travel)
         if st.blend >= 0.98 and st.prompt_b:
-            st.prompt_a = st.prompt_b     # settled: B becomes the new resting form
-            # keep blend high; next mood resets it
+            st.prompt_a = st.prompt_b
 
-        # emergence envelope: ramp to 1 over T_GATHER, decay over T_SETTLE
-        if since < T_GATHER:
-            env = since / T_GATHER
-        else:
-            env = max(0.0, 1.0 - (since - T_GATHER) / T_SETTLE)
-        st.emergence = env
+        # topic envelope (gather->settle) + fast word pulse
+        env = (since / T_GATHER) if since < T_GATHER else max(0.0, 1.0 - (since - T_GATHER) / T_SETTLE)
+        wsince = self.t - self.word_at
+        wenv = (wsince / T_WORD_GATHER) if wsince < T_WORD_GATHER else max(0.0, 1.0 - (wsince - T_WORD_GATHER) / T_WORD_DECAY)
+        st.emergence = max(env, wenv)
 
-        # denoise: rest continuity + envelope + audio breath + beat flicker
         base = DENOISE_MUSIC_REST if music else DENOISE_REST
-        denoise = base + DENOISE_SPAN * env + 0.04 * a.bass
+        denoise = base + DENOISE_SPAN * env + DENOISE_WORD_SPAN * wenv + 0.04 * a.bass + st.denoise_bias
         if a.beat_fired:
             denoise += 0.05
-        st.denoise = max(DENOISE_FLOOR, min(0.68, denoise))
+        st.denoise = max(DENOISE_FLOOR, min(0.72, denoise))
 
-        # seed: slow drift so it never dead-locks into one static image
         if self.t - self.last_seed_drift >= SEED_DRIFT_SEC:
             self.last_seed_drift = self.t
             st.seed += 1
@@ -115,13 +168,13 @@ class ControlLaw:
 async def control_task(hub) -> None:
     st = hub.state
     if not st.prompt_a:
-        st.prompt_a = build_prompt("")   # rest scene
+        st.prompt_a = build_prompt("")
         st.prompt_b = st.prompt_a
     law = ControlLaw()
     dt = 1.0 / TICK_HZ
-    print("[control] slow-emergence control law online")
+    vision_seen = 0
+    print("[control] slow-emergence control law online (open-vocab word capture)")
 
-    # optional AutoLume OSC co-drive (task 5); absent module = no-op
     osc = None
     if os.environ.get("NYE_AUTOLUME", "").lower() in ("1", "true", "on"):
         try:
@@ -132,7 +185,10 @@ async def control_task(hub) -> None:
             print(f"[control] AutoLume OSC unavailable: {e}")
 
     while st.running:
-        law.tick(st, dt)
+        law.tick(st, hub, dt)
+        if st.vision_seq != vision_seen:          # push the current vision words to the HUD
+            vision_seen = st.vision_seq
+            asyncio.create_task(hub.broadcast_json({"type": "vision", "words": st.vision_words}))
         if osc is not None:
             try:
                 osc.drive(st, law.t)
